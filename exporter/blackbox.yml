@@ -10,7 +10,7 @@ modules:
       preferred_ip_protocol: "ip4"
       tls_config:
         insecure_skip_verify: true
-      valid_http_statuses:
+      valid_status_codes:
         - 200
         - 301
         - 302
