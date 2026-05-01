@@ -1,0 +1,80 @@
+# Alert Rules for SSL Certificate Monitoring
+# Save this to: prometheus/ssl_cert_alerts.yml
+
+groups:
+  - name: ssl_cert_alerts
+    rules:
+      # Alert when certificate expires in 30 days
+      - alert: SSLCertificateExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 30
+        for: 5m
+        labels:
+          severity: warning
+          alert_type: ssl_cert
+        annotations:
+          summary: "SSL Certificate expiring soon for {{ $labels.instance }}"
+          description: "SSL certificate for {{ $labels.instance }} will expire in {{ $value | humanize }} days (Date: {{ $labels.expiry_date }})"
+          owner: "{{ $labels.owner }}"
+
+      # Alert when certificate expires in 7 days
+      - alert: SSLCertificateExpiringCritical
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 7
+        for: 5m
+        labels:
+          severity: critical
+          alert_type: ssl_cert
+        annotations:
+          summary: "SSL Certificate expiring CRITICAL for {{ $labels.instance }}"
+          description: "SSL certificate for {{ $labels.instance }} will expire in {{ $value | humanize }} days!!! (Date: {{ $labels.expiry_date }})"
+          owner: "{{ $labels.owner }}"
+
+      # Alert when certificate has already expired
+      - alert: SSLCertificateExpired
+        expr: probe_ssl_earliest_cert_expiry < time()
+        for: 5m
+        labels:
+          severity: critical
+          alert_type: ssl_cert
+        annotations:
+          summary: "SSL Certificate has EXPIRED for {{ $labels.instance }}❌"
+          description: "SSL certificate for {{ $labels.instance }} expired on {{ $labels.expiry_date }}!!!"
+          owner: "{{ $labels.owner }}"
+
+      # Alert when SSL probe fails
+      - alert: SSLProbeFailed
+        expr: probe_success == 0
+        for: 5m
+        labels:
+          severity: warning
+          alert_type: ssl_probe
+        annotations:
+          summary: "SSL probe failed for {{ $labels.instance }}"
+          description: "Failed to probe SSL certificate for {{ $labels.instance }}. Error: {{ $labels.error }}"
+          owner: "{{ $labels.owner }}"
+
+      # Using custom exporter metrics
+      # Alert when certificate expires in 30 days (custom exporter)
+      - alert: SSLCertExpiringCustom
+        expr: (ssl_cert_not_after - time()) / 86400 < 30
+        for: 5m
+        labels:
+          severity: warning
+          alert_type: ssl_cert_custom
+        annotations:
+          summary: "SSL Certificate expiring (Custom Exporter) - {{ $labels.hostname }}"
+          description: "Certificate for {{ $labels.hostname }} ({{ $labels.env }}) expires in {{ $value | humanize }} days. Owner: {{ $labels.owner }}"
+          issuer: "{{ $labels.issuer }}"
+          service: "{{ $labels.service_name }}"
+
+      # Alert when certificate expires in 7 days (custom exporter)
+      - alert: SSLCertExpiringCriticalCustom
+        expr: (ssl_cert_not_after - time()) / 86400 < 7
+        for: 5m
+        labels:
+          severity: critical
+          alert_type: ssl_cert_custom
+        annotations:
+          summary: "SSL Certificate CRITICAL (Custom Exporter) - {{ $labels.hostname }}"
+          description: "Certificate for {{ $labels.hostname }} ({{ $labels.env }}) expires in {{ $value | humanize }} days!!! Owner: {{ $labels.owner }}"
+          issuer: "{{ $labels.issuer }}"
+          service: "{{ $labels.service_name }}"

@@ -1,0 +1,56 @@
+# Prometheus Configuration for SSL Certificate Monitoring
+# Save this to: prometheus/prometheus.yml
+
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - localhost:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "ssl_cert_alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Blackbox Exporter for basic SSL probing
+  - job_name: 'ssl-blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_ssl_cert]
+    static_configs:
+      - targets:
+        # Public domains
+        - https://www.google.com
+        - https://github.com
+        - https://www.baidu.com
+        # Internal domains (uncomment as needed)
+        # - https://internal.example.com
+        # - https://app.internal.local
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: localhost:9115  # Blackbox Exporter address
+
+  # Custom SSL Exporter for detailed certificate information
+  - job_name: 'ssl-cert-exporter'
+    static_configs:
+      - targets: ['localhost:9116']  # Custom exporter address
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

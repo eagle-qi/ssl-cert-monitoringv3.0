@@ -1,0 +1,39 @@
+{
+  "targets": [
+    {
+      "hostname": "www.google.com",
+      "port": 443,
+      "owner": "运维团队",
+      "env": "production",
+      "service_name": "Google Main Site"
+    },
+    {
+      "hostname": "github.com",
+      "port": 443,
+      "owner": "开发团队",
+      "env": "production",
+      "service_name": "GitHub"
+    },
+    {
+      "hostname": "internal.example.com",
+      "port": 443,
+      "owner": "内网运维",
+      "env": "internal",
+      "service_name": "内网服务"
+    },
+    {
+      "hostname": "192.168.1.100",
+      "port": 8443,
+      "owner": "测试团队",
+      "env": "test",
+      "service_name": "测试环境API"
+    },
+    {
+      "hostname": "10.0.0.50",
+      "port": 443,
+      "owner": "安全团队",
+      "env": "production",
+      "service_name": "安全服务"
+    }
+  ]
+}
