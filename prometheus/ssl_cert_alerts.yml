@@ -60,14 +60,3 @@ groups:
           service: "{{ $labels.service_name }}"
           env: "{{ $labels.env }}"
 
-      # Blackbox Exporter Alerts (备用)
-      - alert: SSLProbeFailed
-        expr: probe_success == 0
-        for: 5m
-        labels:
-          severity: warning
-          alert_type: ssl_probe
-        annotations:
-          summary: "SSL探测失败 - {{ $labels.instance }}"
-          description: "无法探测 {{ $labels.instance }} 的SSL证书状态"
-
