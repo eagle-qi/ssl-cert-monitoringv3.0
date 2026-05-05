@@ -3,44 +3,64 @@
 
 groups:
   - name: ssl_cert_alerts
+    interval: 30s
     rules:
-      # Alert when certificate expires in 30 days
-      - alert: SSLCertificateExpiringSoon
-        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 30
+      # Alert when certificate check fails (连接失败)
+      - alert: SSLCertCheckFailed
+        expr: ssl_cert_check_success == 0
+        for: 1m
+        labels:
+          severity: warning
+          alert_type: ssl_cert
+        annotations:
+          summary: "SSL证书检查失败 - {{ $labels.hostname }}"
+          description: "无法获取 {{ $labels.hostname }}:{{ $labels.port }} 的SSL证书. 负责人: {{ $labels.owner }}"
+          owner: "{{ $labels.owner }}"
+          service: "{{ $labels.service_name }}"
+
+      # Alert when certificate expires in 30 days (使用自定义exporter指标)
+      - alert: SSLCertExpiringWarning
+        expr: (ssl_cert_not_after_timestamp - time()) / 86400 < 30 and ssl_cert_check_success == 1
         for: 5m
         labels:
           severity: warning
           alert_type: ssl_cert
         annotations:
-          summary: "SSL Certificate expiring soon for {{ $labels.instance }}"
-          description: "SSL certificate for {{ $labels.instance }} will expire in {{ $value | humanize }} days (Date: {{ $labels.expiry_date }})"
+          summary: "SSL证书即将过期 - {{ $labels.hostname }}"
+          description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书将在 {{ $value | humanizeDuration }} 后过期. 负责人: {{ $labels.owner }}"
           owner: "{{ $labels.owner }}"
+          service: "{{ $labels.service_name }}"
+          env: "{{ $labels.env }}"
 
-      # Alert when certificate expires in 7 days
-      - alert: SSLCertificateExpiringCritical
-        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 7
-        for: 5m
+      # Alert when certificate expires in 7 days (严重)
+      - alert: SSLCertExpiringCritical
+        expr: (ssl_cert_not_after_timestamp - time()) / 86400 < 7 and ssl_cert_check_success == 1
+        for: 2m
         labels:
           severity: critical
           alert_type: ssl_cert
         annotations:
-          summary: "SSL Certificate expiring CRITICAL for {{ $labels.instance }}"
-          description: "SSL certificate for {{ $labels.instance }} will expire in {{ $value | humanize }} days!!! (Date: {{ $labels.expiry_date }})"
+          summary: "SSL证书严重警告 - {{ $labels.hostname }}"
+          description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书将在 {{ $value | humanizeDuration }} 后过期! 请立即处理! 负责人: {{ $labels.owner }}"
           owner: "{{ $labels.owner }}"
+          service: "{{ $labels.service_name }}"
+          env: "{{ $labels.env }}"
 
-      # Alert when certificate has already expired
-      - alert: SSLCertificateExpired
-        expr: probe_ssl_earliest_cert_expiry < time()
-        for: 5m
+      # Alert when certificate has expired
+      - alert: SSLCertExpired
+        expr: ssl_cert_not_after_timestamp < time() and ssl_cert_check_success == 1
+        for: 1m
         labels:
           severity: critical
           alert_type: ssl_cert
         annotations:
-          summary: "SSL Certificate has EXPIRED for {{ $labels.instance }}❌"
-          description: "SSL certificate for {{ $labels.instance }} expired on {{ $labels.expiry_date }}!!!"
+          summary: "SSL证书已过期 - {{ $labels.hostname }}"
+          description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书已过期! 请立即更新! 负责人: {{ $labels.owner }}"
           owner: "{{ $labels.owner }}"
+          service: "{{ $labels.service_name }}"
+          env: "{{ $labels.env }}"
 
-      # Alert when SSL probe fails
+      # Blackbox Exporter Alerts (备用)
       - alert: SSLProbeFailed
         expr: probe_success == 0
         for: 5m
@@ -48,33 +68,6 @@ groups:
           severity: warning
           alert_type: ssl_probe
         annotations:
-          summary: "SSL probe failed for {{ $labels.instance }}"
-          description: "Failed to probe SSL certificate for {{ $labels.instance }}. Error: {{ $labels.error }}"
-          owner: "{{ $labels.owner }}"
+          summary: "SSL探测失败 - {{ $labels.instance }}"
+          description: "无法探测 {{ $labels.instance }} 的SSL证书状态"
 
-      # Using custom exporter metrics
-      # Alert when certificate expires in 30 days (custom exporter)
-      - alert: SSLCertExpiringCustom
-        expr: (ssl_cert_not_after - time()) / 86400 < 30
-        for: 5m
-        labels:
-          severity: warning
-          alert_type: ssl_cert_custom
-        annotations:
-          summary: "SSL Certificate expiring (Custom Exporter) - {{ $labels.hostname }}"
-          description: "Certificate for {{ $labels.hostname }} ({{ $labels.env }}) expires in {{ $value | humanize }} days. Owner: {{ $labels.owner }}"
-          issuer: "{{ $labels.issuer }}"
-          service: "{{ $labels.service_name }}"
-
-      # Alert when certificate expires in 7 days (custom exporter)
-      - alert: SSLCertExpiringCriticalCustom
-        expr: (ssl_cert_not_after - time()) / 86400 < 7
-        for: 5m
-        labels:
-          severity: critical
-          alert_type: ssl_cert_custom
-        annotations:
-          summary: "SSL Certificate CRITICAL (Custom Exporter) - {{ $labels.hostname }}"
-          description: "Certificate for {{ $labels.hostname }} ({{ $labels.env }}) expires in {{ $value | humanize }} days!!! Owner: {{ $labels.owner }}"
-          issuer: "{{ $labels.issuer }}"
-          service: "{{ $labels.service_name }}"

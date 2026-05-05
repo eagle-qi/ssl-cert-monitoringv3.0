@@ -1,0 +1,39 @@
+apiVersion: 1
+
+teams:
+  - name: SSL证书运维团队
+    email: ssl-alerts@example.com
+    slack: "#ssl-alerts"
+
+  - name: 开发团队
+    email: dev-ops@example.com
+
+receivers:
+  - name: prometheus-alerts
+    grafana_managed_receiver_configs:
+      - uid: prometheus-receiver
+        type: prometheus
+        name: Prometheus Alertmanager
+        settings:
+          url: http://ssl-alertmanager:9093
+          autoSend: true
+
+  - name: email-receiver
+    grafana_managed_receiver_configs:
+      - uid: email-receiver
+        type: email
+        name: Email Receiver
+        settings:
+          addresses: admin@example.com
+          singleEmail: true
+
+route:
+  receiver: prometheus-alerts
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  routes:
+    - receiver: email-receiver
+      match:
+        severity: critical

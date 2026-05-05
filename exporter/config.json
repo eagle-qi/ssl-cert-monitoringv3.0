@@ -1,39 +1,56 @@
 {
   "targets": [
     {
-      "hostname": "www.google.com",
-      "port": 443,
+      "type": "domain",
+      "url": "www.baidu.com:443",
       "owner": "运维团队",
       "env": "production",
-      "service_name": "Google Main Site"
+      "service_name": "百度首页"
     },
     {
-      "hostname": "github.com",
-      "port": 443,
+      "type": "domain",
+      "url": "www.qq.com:443",
       "owner": "开发团队",
       "env": "production",
-      "service_name": "GitHub"
+      "service_name": "腾讯首页"
     },
     {
-      "hostname": "internal.example.com",
-      "port": 443,
-      "owner": "内网运维",
-      "env": "internal",
-      "service_name": "内网服务"
+      "type": "domain",
+      "url": "www.aliyun.com:443",
+      "owner": "运维团队",
+      "env": "production",
+      "service_name": "阿里云"
     },
     {
-      "hostname": "192.168.1.100",
-      "port": 8443,
+      "type": "domain",
+      "url": "www.jd.com:443",
       "owner": "测试团队",
       "env": "test",
-      "service_name": "测试环境API"
+      "service_name": "京东首页"
     },
     {
-      "hostname": "10.0.0.50",
-      "port": 443,
-      "owner": "安全团队",
-      "env": "production",
-      "service_name": "安全服务"
+      "type": "ip",
+      "url": "https://host.docker.internal:8443",
+      "owner": "测试团队",
+      "env": "test",
+      "service_name": "证书告警测试",
+      "skip_verify": true
+    },
+    {
+      "type": "ip",
+      "url": "https://123.56.51.156:37847/login",
+      "owner": "测试团队",
+      "env": "test",
+      "service_name": "业务系统-1",
+      "skip_verify": true
+    },
+    {
+      "type": "ip",
+      "url": "https://47.93.211.127:33698/login",
+      "owner": "测试团队",
+      "env": "test",
+      "service_name": "业务系统-2",
+      "skip_verify": true
     }
   ]
 }

@@ -1,0 +1,58 @@
+[
+  {
+    "targets": ["https://www.baidu.com:443"],
+    "labels": {
+      "service_name": "百度首页",
+      "owner": "运维团队",
+      "env": "production"
+    }
+  },
+  {
+    "targets": ["https://www.qq.com:443"],
+    "labels": {
+      "service_name": "腾讯首页",
+      "owner": "开发团队",
+      "env": "production"
+    }
+  },
+  {
+    "targets": ["https://www.aliyun.com:443"],
+    "labels": {
+      "service_name": "阿里云",
+      "owner": "运维团队",
+      "env": "production"
+    }
+  },
+  {
+    "targets": ["https://www.jd.com:443"],
+    "labels": {
+      "service_name": "京东首页",
+      "owner": "测试团队",
+      "env": "test"
+    }
+  },
+  {
+    "targets": ["https://host.docker.internal:8443"],
+    "labels": {
+      "service_name": "证书告警测试",
+      "owner": "测试团队",
+      "env": "test"
+    }
+  },
+  {
+    "targets": ["https://123.56.51.156:37847/login"],
+    "labels": {
+      "service_name": "业务系统-1",
+      "owner": "测试团队",
+      "env": "test"
+    }
+  },
+  {
+    "targets": ["https://47.93.211.127:33698/login"],
+    "labels": {
+      "service_name": "业务系统-2",
+      "owner": "测试团队",
+      "env": "test"
+    }
+  }
+]

@@ -32,13 +32,13 @@
       "description": "显示所有监控的SSL证书详细信息，包括URL、有效期、发行机构和负责人",
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "ssl_cert_days_left",
           "format": "table",
@@ -58,6 +58,7 @@
             "mode": "palette-classic"
           },
           "mappings": [],
+          "unit": "d",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -113,15 +114,15 @@
       "description": "显示各证书剩余有效天数，红色表示已过期或即将过期",
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
-          "expr": "ssl_cert_days_left{ssl_cert_check_success=\"1\"}",
+          "expr": "ssl_cert_days_left",
           "legendFormat": "{{hostname}}:{{port}}",
           "refId": "A"
         }
@@ -169,16 +170,44 @@
       "description": "按状态显示证书分布：正常（>30天）、警告（7-30天）、严重（<7天）、已过期",
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
-          "expr": "count by (status) (ssl_cert_days_left_status)",
+          "expr": "count(ssl_cert_days_left > 30) or vector(0)",
+          "legendFormat": "正常 (>30天)",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left >= 7 and ssl_cert_days_left <= 30) or vector(0)",
+          "legendFormat": "警告 (7-30天)",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left > 0 and ssl_cert_days_left < 7) or vector(0)",
+          "legendFormat": "严重 (<7天)",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left <= 0) or vector(0)",
+          "legendFormat": "已过期",
+          "refId": "D"
         }
       ],
       "options": {
@@ -199,13 +228,13 @@
       "description": "列出所有在30天内即将过期的SSL证书",
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "ssl_cert_days_left < 30 and ssl_cert_check_success == 1",
           "format": "table",
@@ -260,22 +289,22 @@
       "description": "显示证书总数、正常、警告、严重状态的数量",
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
-          "expr": "count(ssl_cert_check_success{value=\"1\"})",
+          "expr": "count(ssl_cert_check_success == 1)",
           "legendFormat": "总数",
           "refId": "A"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "count(ssl_cert_days_left > 30)",
           "legendFormat": "正常",
@@ -284,7 +313,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "count(ssl_cert_days_left >= 7 and ssl_cert_days_left <= 30)",
           "legendFormat": "警告",
@@ -293,7 +322,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "count(ssl_cert_days_left < 7)",
           "legendFormat": "严重",
@@ -319,13 +348,13 @@
       "description": "显示各负责人管理的证书数量及状态",
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "expr": "count by (owner) (ssl_cert_days_left)",
           "legendFormat": "{{owner}}",

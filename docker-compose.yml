@@ -25,10 +25,15 @@ services:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./grafana:/etc/grafana/provisioning
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/provisioning/alerting:/etc/grafana/provisioning/alerting
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ALERTING_ENABLED=true
+      - GF_ALERTING_ALERTMANAGER_FORCE_WORKER=true
+      - GF_ALERTING_ALERTMANAGER_RESOLVING_TIMEOUT=1m
     restart: unless-stopped
 
   blackbox-exporter:
@@ -49,6 +54,12 @@ services:
       - "9116:9116"
     volumes:
       - ./exporter:/app
+    dns:
+      - 8.8.8.8
+      - 114.114.114.114
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "ssl-test.local:host-gateway"
     restart: unless-stopped
 
   alertmanager:

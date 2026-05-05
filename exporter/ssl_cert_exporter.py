@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 SSL Certificate Exporter for Prometheus
-自定义SSL证书Exporter，采集证书详细信息
+支持两种监控目标格式：
+1. 域名格式: www.example.com:443
+2. IP格式: 192.168.1.100:8443
 
 Metric信息:
 - ssl_cert_days_left: 证书剩余天数
@@ -17,6 +19,7 @@ Metric信息:
 """
 
 import json
+import re
 import ssl
 import socket
 import time
@@ -25,6 +28,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import argparse
 import logging
+from urllib.parse import urlparse
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -35,24 +39,107 @@ CONFIG = {
     "targets": []
 }
 
+# 需要跳过证书验证的域名/IP模式
+SKIP_VERIFY_PATTERNS = [
+    'ssl-test.local',
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+]
+
+
 def load_config(config_file):
     """加载配置文件"""
     global CONFIG
     try:
         with open(config_file, 'r') as f:
             CONFIG = json.load(f)
-        logger.info(f"Loaded config from {config_file}")
+        logger.info(f"Loaded config from {config_file}, found {len(CONFIG.get('targets', []))} targets")
     except Exception as e:
         logger.error(f"Failed to load config: {e}")
         raise
 
-def get_cert_info(hostname, port=443, timeout=10):
+
+def should_skip_verify(hostname):
+    """判断是否需要跳过证书验证"""
+    if hostname in SKIP_VERIFY_PATTERNS:
+        return True
+    if hostname.endswith('.local'):
+        return True
+    # 检查是否是私有IP范围
+    try:
+        parts = hostname.split('.')
+        if len(parts) == 4:
+            first = int(parts[0])
+            # 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+            if first == 10:
+                return True
+            if first == 172 and 16 <= int(parts[1]) <= 31:
+                return True
+            if first == 192 and parts[1] == '168':
+                return True
+    except:
+        pass
+    return False
+
+
+def parse_target_url(url):
+    """
+    解析目标URL，支持以下格式：
+    - www.example.com:443 (域名:端口)
+    - 192.168.1.100:8443 (IP:端口)
+    - https://www.example.com (带协议前缀)
+    - https://192.168.1.100:8443/path (带协议和路径)
+    
+    Returns:
+        dict: {host, port, path, is_ip}
+    """
+    result = {
+        'host': None,
+        'port': 443,
+        'path': '',
+        'is_ip': False
+    }
+    
+    # 移除协议前缀
+    parsed = urlparse(url if '://' in url else f'//{url}')
+    host_port = parsed.netloc or parsed.path
+    result['path'] = parsed.path
+    
+    # 分离主机和端口
+    if ':' in host_port:
+        host, port_str = host_port.rsplit(':', 1)
+        result['host'] = host
+        result['port'] = int(port_str)
+    else:
+        result['host'] = host_port
+        result['port'] = 443 if parsed.scheme == 'https' else 80
+    
+    # 判断是否为IP
+    result['is_ip'] = _is_ip_address(result['host'])
+    
+    return result
+
+
+def _is_ip_address(host):
+    """判断是否为IP地址"""
+    try:
+        socket.inet_aton(host)
+        return True
+    except socket.error:
+        return False
+    except Exception:
+        return False
+
+
+def get_cert_info(hostname, port=443, skip_verify=False, timeout=30):
     """
     获取SSL证书信息
     
     Args:
         hostname: 主机名或IP地址
         port: 端口号
+        skip_verify: 是否跳过证书验证
         timeout: 超时时间（秒）
     
     Returns:
@@ -71,57 +158,102 @@ def get_cert_info(hostname, port=443, timeout=10):
         'sans': []
     }
     
+    # 如果没有明确指定skip_verify，根据hostname判断
+    if not skip_verify:
+        skip_verify = should_skip_verify(hostname)
+    
     try:
         # 创建SSL上下文
         context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        
+        if skip_verify:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
         
         # 连接目标服务器
-        with socket.create_connection((hostname, port), timeout=timeout) as sock:
-            with context.wrap_socket(sock, server_hostname=hostname) as ssock:
-                cert = ssock.getpeercert()
+        connect_host = hostname
+        # 对于IP直连，使用IP地址作为server_hostname
+        server_hostname = hostname if not skip_verify else None
+        
+        logger.info(f"Connecting to {connect_host}:{port} (skip_verify={skip_verify})")
+        
+        with socket.create_connection((connect_host, port), timeout=timeout) as sock:
+            with context.wrap_socket(sock, server_hostname=server_hostname) as ssock:
+                cert_der = ssock.getpeercert(binary_form=True)
                 
-                if not cert:
+                if not cert_der:
                     result['error'] = 'No certificate found'
                     return result
                 
-                # 解析证书信息
                 result['success'] = True
                 
-                # 时间信息
-                if 'notAfter' in cert:
-                    not_after = datetime.datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
-                    not_before = datetime.datetime.strptime(cert['notBefore'], '%b %d %H:%M:%S %Y %Z')
-                    now = datetime.datetime.now()
+                # 使用 cryptography 库解析 DER 格式证书
+                try:
+                    from cryptography import x509
+                    from cryptography.hazmat.backends import default_backend
+                    
+                    cert_obj = x509.load_der_x509_certificate(cert_der, default_backend())
+                    
+                    # 时间信息
+                    not_after = cert_obj.not_valid_after_utc
+                    not_before = cert_obj.not_valid_before_utc
+                    now = datetime.datetime.now(datetime.timezone.utc)
                     
                     result['not_after'] = int(not_after.timestamp())
                     result['not_before'] = int(not_before.timestamp())
-                    result['days_left'] = (not_after - now).days
-                
-                # 主题信息
-                if 'subject' in cert:
-                    for item in cert['subject']:
-                        for key, value in item:
-                            result['subject'][key] = value
-                
-                # 发行者信息
-                if 'issuer' in cert:
-                    for item in cert['issuer']:
-                        for key, value in item:
-                            result['issuer'][key] = value
-                
-                # 序列号
-                if 'serialNumber' in cert:
-                    result['serial'] = cert['serialNumber']
-                
-                # 版本
-                if 'version' in cert:
-                    result['version'] = str(cert['version'])
-                
-                # SANs (Subject Alternative Names)
-                if 'subjectAltName' in cert:
-                    result['sans'] = [name[1] for name in cert['subjectAltName']]
+                    result['days_left'] = (not_after.replace(tzinfo=None) - now.replace(tzinfo=None)).days
+                    
+                    # 主题信息
+                    for attr in cert_obj.subject:
+                        result['subject'][attr.oid._name] = attr.value
+                    
+                    # 发行者信息
+                    for attr in cert_obj.issuer:
+                        result['issuer'][attr.oid._name] = attr.value
+                    
+                    # 序列号
+                    result['serial'] = format(cert_obj.serial_number, 'X')
+                    
+                    # 版本
+                    result['version'] = str(cert_obj.version.value)
+                    
+                    # SANs
+                    try:
+                        san_ext = cert_obj.extensions.get_extension_for_oid(x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+                        result['sans'] = [name.value for name in san_ext.value]
+                    except:
+                        pass
+                        
+                except ImportError:
+                    cert = ssock.getpeercert()
+                    if cert:
+                        if 'notAfter' in cert:
+                            not_after = datetime.datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
+                            not_before = datetime.datetime.strptime(cert['notBefore'], '%b %d %H:%M:%S %Y %Z')
+                            now = datetime.datetime.now()
+                            
+                            result['not_after'] = int(not_after.timestamp())
+                            result['not_before'] = int(not_before.timestamp())
+                            result['days_left'] = (not_after - now).days
+                        
+                        if 'subject' in cert:
+                            for item in cert['subject']:
+                                for key, value in item:
+                                    result['subject'][key] = value
+                        
+                        if 'issuer' in cert:
+                            for item in cert['issuer']:
+                                for key, value in item:
+                                    result['issuer'][key] = value
+                        
+                        if 'serialNumber' in cert:
+                            result['serial'] = cert['serialNumber']
+                        
+                        if 'version' in cert:
+                            result['version'] = str(cert['version'])
+                        
+                        if 'subjectAltName' in cert:
+                            result['sans'] = [name[1] for name in cert['subjectAltName']]
         
     except socket.timeout:
         result['error'] = f'Connection timeout to {hostname}:{port}'
@@ -134,6 +266,33 @@ def get_cert_info(hostname, port=443, timeout=10):
         logger.warning(result['error'])
     
     return result
+
+
+def generate_blackbox_targets():
+    """生成blackbox探针目标列表"""
+    targets = []
+    for target in CONFIG.get('targets', []):
+        url = target.get('url')
+        service_name = target.get('service_name', url)
+        
+        # 根据URL格式确定探针协议
+        parsed = parse_target_url(url)
+        if parsed['port'] == 443 or url.startswith('https://'):
+            probe_url = f"https://{parsed['host']}:{parsed['port']}{parsed['path']}"
+        else:
+            probe_url = f"http://{parsed['host']}:{parsed['port']}{parsed['path']}"
+        
+        targets.append({
+            'targets': [probe_url],
+            'labels': {
+                'job': 'ssl-cert-exporter',
+                'service_name': service_name,
+                'owner': target.get('owner', 'unknown'),
+                'env': target.get('env', 'unknown')
+            }
+        })
+    return targets
+
 
 def generate_prometheus_metrics():
     """生成Prometheus格式的metrics"""
@@ -154,17 +313,25 @@ def generate_prometheus_metrics():
     metrics.append('# TYPE ssl_cert_sans_count gauge')
     
     for target in CONFIG.get('targets', []):
-        hostname = target.get('hostname')
-        port = target.get('port', 443)
+        url = target.get('url')
         owner = target.get('owner', 'unknown')
         env = target.get('env', 'unknown')
-        service_name = target.get('service_name', hostname)
+        service_name = target.get('service_name', url)
+        skip_verify = target.get('skip_verify', False)
+        
+        if not url:
+            continue
+        
+        # 解析URL
+        parsed = parse_target_url(url)
+        hostname = parsed['host']
+        port = parsed['port']
         
         if not hostname:
             continue
         
         logger.info(f"Checking certificate for {hostname}:{port}")
-        cert_info = get_cert_info(hostname, port)
+        cert_info = get_cert_info(hostname, port, skip_verify=skip_verify)
         
         # 基础标签
         labels = (
@@ -218,6 +385,7 @@ def generate_prometheus_metrics():
     
     return '\n'.join(metrics) + '\n'
 
+
 class MetricsHandler(BaseHTTPRequestHandler):
     """HTTP请求处理器，用于Prometheus scraping"""
     
@@ -230,6 +398,13 @@ class MetricsHandler(BaseHTTPRequestHandler):
             
             metrics_output = generate_prometheus_metrics()
             self.wfile.write(metrics_output.encode('utf-8'))
+        elif self.path == '/targets':
+            # 返回blackbox探针目标（用于动态配置）
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            targets = generate_blackbox_targets()
+            self.wfile.write(json.dumps(targets, ensure_ascii=False).encode('utf-8'))
         elif self.path == '/health':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -243,6 +418,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
         """自定义日志输出"""
         logger.info(f"{self.address_string()} - {format % args}")
 
+
 def run_server(host, port, config_file):
     """运行Exporter HTTP服务器"""
     load_config(config_file)
@@ -250,12 +426,14 @@ def run_server(host, port, config_file):
     server = HTTPServer((host, port), MetricsHandler)
     logger.info(f"SSL Certificate Exporter started on {host}:{port}")
     logger.info(f"Metrics available at http://{host}:{port}/metrics")
+    logger.info(f"Blackbox targets available at http://{host}:{port}/targets")
     
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         logger.info("Shutting down exporter...")
         server.shutdown()
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SSL Certificate Exporter for Prometheus')
