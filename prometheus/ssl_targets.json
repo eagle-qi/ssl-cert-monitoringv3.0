@@ -32,7 +32,7 @@
     }
   },
   {
-    "targets": ["https://host.docker.internal:8443"],
+    "targets": ["https://192.168.31.85:8443"],
     "labels": {
       "service_name": "证书告警测试",
       "owner": "测试团队",
@@ -40,7 +40,7 @@
     }
   },
   {
-    "targets": ["https://123.56.51.156:37847/login"],
+    "targets": ["https://IP1:37847/login"],
     "labels": {
       "service_name": "业务系统-1",
       "owner": "测试团队",
@@ -48,7 +48,7 @@
     }
   },
   {
-    "targets": ["https://47.93.211.127:33698/login"],
+    "targets": ["https://IP2:33698/login"],
     "labels": {
       "service_name": "业务系统-2",
       "owner": "测试团队",

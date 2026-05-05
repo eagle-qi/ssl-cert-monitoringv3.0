@@ -30,7 +30,7 @@
     },
     {
       "type": "ip",
-      "url": "https://host.docker.internal:8443",
+      "url": "https://192.168.31.85:8443",
       "owner": "测试团队",
       "env": "test",
       "service_name": "证书告警测试",
@@ -38,7 +38,7 @@
     },
     {
       "type": "ip",
-      "url": "https://123.56.51.156:37847/login",
+      "url": "https://IP1:37847/login",
       "owner": "测试团队",
       "env": "test",
       "service_name": "业务系统-1",
@@ -46,7 +46,7 @@
     },
     {
       "type": "ip",
-      "url": "https://47.93.211.127:33698/login",
+      "url": "https://IP2:33698/login",
       "owner": "测试团队",
       "env": "test",
       "service_name": "业务系统-2",
