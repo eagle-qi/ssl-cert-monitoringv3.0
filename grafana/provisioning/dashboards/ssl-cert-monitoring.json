@@ -1,544 +1,540 @@
 {
-  "dashboard": {
-    "annotations": {
-      "list": [
-        {
-          "builtIn": 1,
-          "enable": true,
-          "hide": true,
-          "iconColor": "rgba(0, 211, 255, 1)",
-          "name": "Annotations & Alerts",
-          "type": "dashboard"
-        }
-      ]
-    },
-    "id": 3,
-    "panels": [
+  "annotations": {
+    "list": [
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "description": "显示所有监控的SSL证书详细信息",
-        "fieldConfig": {
-          "defaults": {
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "red",
-                  "value": 0
-                },
-                {
-                  "color": "orange",
-                  "value": 7
-                },
-                {
-                  "color": "yellow",
-                  "value": 30
-                },
-                {
-                  "color": "green",
-                  "value": 365
-                }
-              ]
-            }
-          },
-          "overrides": [
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "剩余天数"
-              },
-              "properties": [
-                {
-                  "id": "unit",
-                  "value": "d"
-                },
-                {
-                  "id": "displayMode",
-                  "value": "color-background"
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "主机名"
-              },
-              "properties": [
-                {
-                  "id": "custom.width",
-                  "value": 200
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "服务名称"
-              },
-              "properties": [
-                {
-                  "id": "custom.width",
-                  "value": 150
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "端口"
-              },
-              "properties": [
-                {
-                  "id": "unit",
-                  "value": "none"
-                },
-                {
-                  "id": "custom.width",
-                  "value": 80
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "环境"
-              },
-              "properties": [
-                {
-                  "id": "custom.width",
-                  "value": 100
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "负责人"
-              },
-              "properties": [
-                {
-                  "id": "custom.width",
-                  "value": 120
-                }
-              ]
-            }
-          ]
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 24,
-          "x": 0,
-          "y": 0
-        },
-        "id": 1,
-        "options": {
-          "showHeader": true,
-          "sortBy": []
-        },
-        "targets": [
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "ssl_cert_days_left",
-            "format": "table",
-            "instant": true,
-            "refId": "A"
-          }
-        ],
-        "title": "SSL 证书详细信息",
-        "transformations": [
-          {
-            "id": "organize",
-            "options": {
-              "excludeByName": {
-                "Time": true,
-                "__name__": true,
-                "instance": true,
-                "job": true,
-                "prometheus": true
-              },
-              "renameByName": {
-                "Time": "时间",
-                "Value": "剩余天数",
-                "env": "环境",
-                "hostname": "主机名",
-                "owner": "负责人",
-                "port": "端口",
-                "service_name": "服务名称"
-              }
-            }
-          }
-        ],
-        "type": "table"
-      },
-      {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "description": "显示各证书剩余有效天数",
-        "fieldConfig": {
-          "defaults": {
-            "max": 365,
-            "min": 0,
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "red",
-                  "value": 0
-                },
-                {
-                  "color": "orange",
-                  "value": 30
-                },
-                {
-                  "color": "green",
-                  "value": 90
-                }
-              ]
-            },
-            "unit": "d"
-          }
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 0,
-          "y": 8
-        },
-        "id": 2,
-        "options": {
-          "colorMode": "background",
-          "orientation": "auto",
-          "textMode": "auto"
-        },
-        "targets": [
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "ssl_cert_days_left",
-            "legendFormat": "{{hostname}}:{{port}}",
-            "refId": "A"
-          }
-        ],
-        "title": "证书剩余有效期（天）",
-        "type": "bargauge"
-      },
-      {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "description": "按状态显示证书分布",
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 12,
-          "y": 8
-        },
-        "id": 3,
-        "options": {
-          "pieType": "donut",
-          "showValues": "auto"
-        },
-        "targets": [
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "count(ssl_cert_days_left > 30) or vector(0)",
-            "legendFormat": "正常 (>30天)",
-            "refId": "A"
-          },
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "count(ssl_cert_days_left >= 7 and ssl_cert_days_left <= 30) or vector(0)",
-            "legendFormat": "警告 (7-30天)",
-            "refId": "B"
-          },
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "count(ssl_cert_days_left > 0 and ssl_cert_days_left < 7) or vector(0)",
-            "legendFormat": "严重 (<7天)",
-            "refId": "C"
-          },
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "count(ssl_cert_days_left <= 0) or vector(0)",
-            "legendFormat": "已过期",
-            "refId": "D"
-          }
-        ],
-        "title": "证书状态分布",
-        "type": "piechart"
-      },
-      {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "description": "列出所有在30天内即将过期的SSL证书",
-        "fieldConfig": {
-          "defaults": {
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "darkred",
-                  "value": 0
-                },
-                {
-                  "color": "red",
-                  "value": 7
-                },
-                {
-                  "color": "orange",
-                  "value": 30
-                }
-              ]
-            }
-          },
-          "overrides": [
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "剩余天数"
-              },
-              "properties": [
-                {
-                  "id": "unit",
-                  "value": "d"
-                },
-                {
-                  "id": "displayMode",
-                  "value": "color-background"
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "端口"
-              },
-              "properties": [
-                {
-                  "id": "unit",
-                  "value": "none"
-                },
-                {
-                  "id": "custom.width",
-                  "value": 80
-                }
-              ]
-            }
-          ]
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 24,
-          "x": 0,
-          "y": 16
-        },
-        "id": 4,
-        "options": {
-          "showHeader": true,
-          "sortBy": [
-            {
-              "desc": false,
-              "displayName": "剩余天数"
-            }
-          ]
-        },
-        "targets": [
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "ssl_cert_days_left < 30 and ssl_cert_check_success == 1",
-            "format": "table",
-            "instant": true,
-            "refId": "A"
-          }
-        ],
-        "title": "即将过期的证书（<30天）",
-        "transformations": [
-          {
-            "id": "organize",
-            "options": {
-              "excludeByName": {
-                "Time": true,
-                "__name__": true,
-                "instance": true,
-                "job": true,
-                "prometheus": true
-              },
-              "renameByName": {
-                "Time": "时间",
-                "Value": "剩余天数",
-                "env": "环境",
-                "hostname": "主机名",
-                "owner": "负责人",
-                "port": "端口",
-                "service_name": "服务名称"
-              }
-            }
-          }
-        ],
-        "type": "table"
-      },
-      {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "description": "显示证书总数、正常、警告、严重状态的数量",
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 0,
-          "y": 24
-        },
-        "id": 5,
-        "options": {
-          "colorMode": "background",
-          "orientation": "auto",
-          "textMode": "auto"
-        },
-        "targets": [
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "count(ssl_cert_check_success == 1)",
-            "legendFormat": "总数",
-            "refId": "A"
-          },
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "count(ssl_cert_days_left > 30)",
-            "legendFormat": "正常",
-            "refId": "B"
-          },
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "count(ssl_cert_days_left >= 7 and ssl_cert_days_left <= 30)",
-            "legendFormat": "警告",
-            "refId": "C"
-          },
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "count(ssl_cert_days_left < 7)",
-            "legendFormat": "严重",
-            "refId": "D"
-          }
-        ],
-        "title": "证书统计",
-        "type": "stat"
-      },
-      {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "description": "显示各负责人管理的证书数量及状态",
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 12,
-          "y": 24
-        },
-        "id": 6,
-        "options": {
-          "orientation": "auto",
-          "showUnfilledAreas": true,
-          "textMode": "auto"
-        },
-        "targets": [
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "expr": "count by (owner) (ssl_cert_days_left)",
-            "legendFormat": "{{owner}}",
-            "refId": "A"
-          }
-        ],
-        "title": "按负责人分布",
-        "type": "bargauge"
+        "builtIn": 1,
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
       }
-    ],
-    "refresh": "1m",
-    "schemaVersion": 38,
-    "tags": [
-      "ssl",
-      "certificate",
-      "monitoring"
-    ],
-    "templating": {
-      "list": [
-        {
-          "name": "DS_PROMETHEUS",
-          "query": {
-            "query": "prometheus",
-            "queryType": ""
-          },
-          "type": "datasource"
-        },
-        {
-          "includeAll": true,
-          "multi": true,
-          "name": "owner",
-          "query": "label_values(ssl_cert_days_left, owner)",
-          "type": "query"
-        },
-        {
-          "includeAll": true,
-          "multi": true,
-          "name": "env",
-          "query": "label_values(ssl_cert_days_left, env)",
-          "type": "query"
-        }
-      ]
-    },
-    "time": {
-      "from": "now-1h",
-      "to": "now"
-    },
-    "timezone": "browser",
-    "title": "SSL 证书监控看板",
-    "uid": "ssl-cert-monitoring",
-    "version": 4
+    ]
   },
-  "overwrite": true,
-  "message": "Updated via provisioning"
+  "id": null,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "显示所有监控的SSL证书详细信息",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 7
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "green",
+                "value": 365
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "剩余天数"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "d"
+              },
+              {
+                "id": "displayMode",
+                "value": "color-background"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "主机名"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "服务名称"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "端口"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "环境"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "负责人"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": null,
+      "options": {
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "ssl_cert_days_left",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "SSL 证书详细信息",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "prometheus": true
+            },
+            "renameByName": {
+              "Time": "时间",
+              "Value": "剩余天数",
+              "env": "环境",
+              "hostname": "主机名",
+              "owner": "负责人",
+              "port": "端口",
+              "service_name": "服务名称"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "显示各证书剩余有效天数",
+      "fieldConfig": {
+        "defaults": {
+          "max": 365,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "d"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": null,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "ssl_cert_days_left",
+          "legendFormat": "{{hostname}}:{{port}}",
+          "refId": "A"
+        }
+      ],
+      "title": "证书剩余有效期（天）",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "按状态显示证书分布",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": null,
+      "options": {
+        "pieType": "donut",
+        "showValues": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left > 30) or vector(0)",
+          "legendFormat": "正常 (>30天)",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left >= 7 and ssl_cert_days_left <= 30) or vector(0)",
+          "legendFormat": "警告 (7-30天)",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left > 0 and ssl_cert_days_left < 7) or vector(0)",
+          "legendFormat": "严重 (<7天)",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left <= 0) or vector(0)",
+          "legendFormat": "已过期",
+          "refId": "D"
+        }
+      ],
+      "title": "证书状态分布",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "列出所有在30天内即将过期的SSL证书",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "darkred",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 7
+              },
+              {
+                "color": "orange",
+                "value": 30
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "剩余天数"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "d"
+              },
+              {
+                "id": "displayMode",
+                "value": "color-background"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "端口"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": null,
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "剩余天数"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "ssl_cert_days_left < 30 and ssl_cert_check_success == 1",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "即将过期的证书（<30天）",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "prometheus": true
+            },
+            "renameByName": {
+              "Time": "时间",
+              "Value": "剩余天数",
+              "env": "环境",
+              "hostname": "主机名",
+              "owner": "负责人",
+              "port": "端口",
+              "service_name": "服务名称"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "显示证书总数、正常、警告、严重状态的数量",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": null,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_check_success == 1)",
+          "legendFormat": "总数",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left > 30)",
+          "legendFormat": "正常",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left >= 7 and ssl_cert_days_left <= 30)",
+          "legendFormat": "警告",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count(ssl_cert_days_left < 7)",
+          "legendFormat": "严重",
+          "refId": "D"
+        }
+      ],
+      "title": "证书统计",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "显示各负责人管理的证书数量及状态",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": null,
+      "options": {
+        "orientation": "auto",
+        "showUnfilledAreas": true,
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count by (owner) (ssl_cert_days_left)",
+          "legendFormat": "{{owner}}",
+          "refId": "A"
+        }
+      ],
+      "title": "按负责人分布",
+      "type": "bargauge"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "tags": [
+    "ssl",
+    "certificate",
+    "monitoring"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "query": {
+          "query": "prometheus",
+          "queryType": ""
+        },
+        "type": "datasource"
+      },
+      {
+        "includeAll": true,
+        "multi": true,
+        "name": "owner",
+        "query": "label_values(ssl_cert_days_left, owner)",
+        "type": "query"
+      },
+      {
+        "includeAll": true,
+        "multi": true,
+        "name": "env",
+        "query": "label_values(ssl_cert_days_left, env)",
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "SSL 证书监控看板",
+  "uid": "ssl-cert-monitoring",
+  "version": 4
 }
