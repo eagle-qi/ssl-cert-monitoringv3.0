@@ -1,0 +1,12 @@
+{
+  "name": "captcha-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "svg-captcha": "^1.4.0"
+  }
+}

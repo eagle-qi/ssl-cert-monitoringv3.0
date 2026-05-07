@@ -5,6 +5,8 @@ SSL Certificate Exporter for Prometheus
 1. 域名格式: www.example.com:443
 2. IP格式: 192.168.1.100:8443
 
+支持热重载配置文件，自动检测配置变更
+
 Metric信息:
 - ssl_cert_days_left: 证书剩余天数
 - ssl_cert_not_after_timestamp: 证书过期时间戳
@@ -29,6 +31,7 @@ import threading
 import argparse
 import logging
 from urllib.parse import urlparse
+import os
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -36,8 +39,12 @@ logger = logging.getLogger(__name__)
 
 # 全局变量存储配置
 CONFIG = {
-    "targets": []
+    "targets": [],
+    "settings": {}
 }
+
+# 配置文件的最后修改时间，用于检测变更
+CONFIG_FILE_MTIME = 0
 
 # 需要跳过证书验证的域名/IP模式
 SKIP_VERIFY_PATTERNS = [
@@ -48,16 +55,42 @@ SKIP_VERIFY_PATTERNS = [
 ]
 
 
-def load_config(config_file):
-    """加载配置文件"""
-    global CONFIG
+def load_config(config_file, force=False):
+    """加载配置文件，支持热重载"""
+    global CONFIG, CONFIG_FILE_MTIME, SKIP_VERIFY_PATTERNS
+    
     try:
+        current_mtime = os.path.getmtime(config_file)
+        
+        # 如果文件没有变化且不是强制加载，直接返回
+        if not force and current_mtime == CONFIG_FILE_MTIME:
+            return
+        
         with open(config_file, 'r') as f:
-            CONFIG = json.load(f)
+            raw_config = json.load(f)
+        
+        # 支持两种格式：
+        # 1. 新格式：{ "targets": [...], "settings": {...} }
+        # 2. 旧格式：{ "targets": [{ "url": "...", ... }] }
+        if isinstance(raw_config, dict) and 'targets' in raw_config:
+            CONFIG = raw_config
+            # 如果有新格式的settings，更新skip_verify_patterns
+            if 'settings' in raw_config and 'skip_verify_patterns' in raw_config['settings']:
+                SKIP_VERIFY_PATTERNS = raw_config['settings']['skip_verify_patterns']
+        else:
+            # 旧格式兼容
+            CONFIG = {"targets": raw_config.get('targets', []), "settings": {}}
+        
+        CONFIG_FILE_MTIME = current_mtime
         logger.info(f"Loaded config from {config_file}, found {len(CONFIG.get('targets', []))} targets")
+        
+    except FileNotFoundError:
+        logger.warning(f"Config file {config_file} not found, using empty config")
+        CONFIG = {"targets": [], "settings": {}}
     except Exception as e:
         logger.error(f"Failed to load config: {e}")
-        raise
+        if force:
+            raise
 
 
 def should_skip_verify(hostname):
@@ -392,6 +425,9 @@ class MetricsHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """处理GET请求"""
         if self.path == '/metrics':
+            # 检查并热重载配置
+            load_config(config_file)
+            
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain; charset=utf-8')
             self.end_headers()
@@ -400,16 +436,50 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.wfile.write(metrics_output.encode('utf-8'))
         elif self.path == '/targets':
             # 返回blackbox探针目标（用于动态配置）
+            load_config(config_file)
+            
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             targets = generate_blackbox_targets()
             self.wfile.write(json.dumps(targets, ensure_ascii=False).encode('utf-8'))
+        elif self.path == '/reload':
+            # 手动触发配置重载
+            try:
+                load_config(config_file, force=True)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'success',
+                    'message': 'Configuration reloaded',
+                    'targets_count': len(CONFIG.get('targets', []))
+                }).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'error',
+                    'message': str(e)
+                }).encode('utf-8'))
         elif self.path == '/health':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({'status': 'healthy'}).encode('utf-8'))
+        elif self.path == '/config':
+            # 返回当前配置状态
+            load_config(config_file)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'status': 'ok',
+                'targets_count': len(CONFIG.get('targets', [])),
+                'config_file': config_file,
+                'config_mtime': CONFIG_FILE_MTIME
+            }).encode('utf-8'))
         else:
             self.send_response(404)
             self.end_headers()
@@ -419,14 +489,23 @@ class MetricsHandler(BaseHTTPRequestHandler):
         logger.info(f"{self.address_string()} - {format % args}")
 
 
-def run_server(host, port, config_file):
+# 全局变量用于在MetricsHandler中使用
+config_file = 'config.json'
+
+def run_server(host, port, config_path):
     """运行Exporter HTTP服务器"""
+    global config_file
+    config_file = config_path
+    
     load_config(config_file)
     
     server = HTTPServer((host, port), MetricsHandler)
     logger.info(f"SSL Certificate Exporter started on {host}:{port}")
     logger.info(f"Metrics available at http://{host}:{port}/metrics")
     logger.info(f"Blackbox targets available at http://{host}:{port}/targets")
+    logger.info(f"Config reload endpoint: http://{host}:{port}/reload")
+    logger.info(f"Config status: http://{host}:{port}/config")
+    logger.info(f"Config file: {config_file}")
     
     try:
         server.serve_forever()
@@ -437,7 +516,7 @@ def run_server(host, port, config_file):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SSL Certificate Exporter for Prometheus')
-    parser.add_argument('-c', '--config', default='config.json', help='Configuration file path')
+    parser.add_argument('-c', '--config', default='/app/data/ssl_targets.json', help='Configuration file path')
     parser.add_argument('-p', '--port', type=int, default=9116, help='Exporter listen port')
     parser.add_argument('--host', default='0.0.0.0', help='Exporter listen host')
     

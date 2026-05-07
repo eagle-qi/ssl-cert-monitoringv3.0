@@ -13,7 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY ssl_cert_exporter.py .
-COPY config.json .
 
 # Expose metrics port
 EXPOSE 9116

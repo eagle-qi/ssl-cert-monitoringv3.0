@@ -1,9 +1,9 @@
 # Prometheus Configuration for SSL Certificate Monitoring
 
 global:
-  scrape_interval: 60s
+  scrape_interval: 180s
   evaluation_interval: 60s
-  scrape_timeout: 30s
+  scrape_timeout: 120s
 
 # Alertmanager configuration
 alerting:
@@ -19,14 +19,15 @@ rule_files:
 # Scrape configurations
 scrape_configs:
   # Blackbox Exporter - 使用 file_sd 自动发现目标
+  # 注意：Prometheus会每30秒自动检查配置更新
   - job_name: 'ssl-blackbox'
     metrics_path: /probe
     params:
       module: [http_ssl_cert]
     file_sd_configs:
       - files:
-          - '/etc/prometheus/ssl_targets.json'
-        refresh_interval: 60s
+          - '/etc/prometheus/ssl_targets.json'  # Prometheus targets 配置文件
+        refresh_interval: 30s  # 缩短刷新间隔，更快响应配置变化
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -45,7 +46,10 @@ scrape_configs:
         target_label: port
 
   # Custom SSL Exporter for detailed certificate information
+  # 支持热重载：每次请求 /metrics 时自动检测配置文件变更
   - job_name: 'ssl-cert-exporter'
+    scrape_interval: 180s
+    scrape_timeout: 120s
     static_configs:
       - targets: ['ssl-custom-exporter:9116']
 
