@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   prometheus:
     image: prom/prometheus:latest
@@ -7,6 +5,7 @@ services:
     volumes:
       - ./prometheus:/etc/prometheus
       - prometheus-data:/prometheus
+      - ./data/prometheus_targets.json:/etc/prometheus/ssl_targets.json:ro  # Prometheus targets 配置文件
     ports:
       - "9090:9090"
     command:
@@ -54,6 +53,7 @@ services:
       - "9116:9116"
     volumes:
       - ./exporter:/app
+      - ./data:/app/data:ro  # 只读挂载配置目录
     dns:
       - 8.8.8.8
       - 114.114.114.114
@@ -73,6 +73,34 @@ services:
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: ssl-dashboard
+    ports:
+      - "8080:80"
+    environment:
+      - VITE_ADMIN_USERNAME=admin
+      - VITE_ADMIN_PASSWORD=admin123
+      - VITE_CAPTCHA_API_URL=http://ssl-captcha-service:3001
+    depends_on:
+      - captcha-service
+    restart: unless-stopped
+
+  captcha-service:
+    build:
+      context: ./dashboard/server
+      dockerfile: Dockerfile
+    container_name: ssl-captcha-service
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data:/app/data  # 读写挂载配置目录
+    environment:
+      - TARGETS_CONFIG_PATH=/app/data/ssl_targets.json  # 统一配置文件路径
     restart: unless-stopped
 
 volumes:
