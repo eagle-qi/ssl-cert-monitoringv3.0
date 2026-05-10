@@ -169,8 +169,32 @@ The captcha service is automatically started with docker-compose. It generates g
 `alertmanager/alertmanager.yml` supports:
 
 - **DingTalk Webhook**: Critical alert notifications
+- **Lark (Feishu) Webhook**: Critical alert notifications
 - **Email**: Warning notifications
 - **Inhibition Rules**: Avoid duplicate alerts
+
+### 5. Lark (Feishu) Configuration
+
+Edit `data/ssl_targets.json` to add Lark webhook:
+
+```json
+{
+  "settings": {
+    "lark_webhook": {
+      "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx",
+      "secret": ""
+    }
+  }
+}
+```
+
+**To create a Lark webhook:**
+1. Open Lark → Group Settings → Group Bots
+2. Click "Add Bot" → "Custom Bot"
+3. Set a name and copy the Webhook URL
+4. Paste the URL into `lark_webhook.webhook_url`
+
+Lark API endpoint: `POST /api/webhooks/lark`
 
 ## Alert Rules
 

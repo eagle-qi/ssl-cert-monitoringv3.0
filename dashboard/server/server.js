@@ -418,6 +418,153 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
+// ==================== 飞书 Webhook API ====================
+
+// 读取飞书配置
+function readLarkConfig() {
+  try {
+    const config = readConfig();
+    return config.settings?.lark_webhook || null;
+  } catch (error) {
+    console.error('Error reading Lark config:', error);
+    return null;
+  }
+}
+
+// 飞书告警消息模板
+function buildLarkAlertCard(alerts) {
+  const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+
+  const alertCards = alerts.map(alert => {
+    const status = alert.status === 'resolved' ? '✅ 已解决' : '🚨 告警中';
+    const severity = alert.labels?.severity === 'critical' ? '🔴 严重' : '🟡 警告';
+
+    return {
+      tag: 'div',
+      text: {
+        tag: 'lark_md',
+        content: `**${alert.labels?.alertname || '未知告警'}**\n\n${severity} ${status}\n\n📍 ${alert.labels?.service_name || alert.labels?.job || '未知服务'}\n⏰ 开始时间: ${new Date(alert.startsAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n${alert.endsAt !== '0001-01-01T00:00:00Z' ? `✅ 结束时间: ${new Date(alert.endsAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : ''}\n\n📋 **详情:**\n\`\`\`\n${alert.annotations?.description || alert.annotations?.summary || '无描述'}
+\`\`\``
+      }
+    };
+  });
+
+  return {
+    msg_type: 'interactive',
+    card: {
+      config: {
+        wide_screen_mode: true
+      },
+      header: {
+        title: {
+          tag: 'plain_text',
+          content: `🔔 SSL证书告警通知 (${alerts.length}条)`
+        },
+        template: alerts.some(a => a.labels?.severity === 'critical') ? 'red' : 'yellow'
+      },
+      elements: [
+        {
+          tag: 'div',
+          text: {
+            tag: 'lark_md',
+            content: `⏰ 通知时间: ${now}`
+          }
+        },
+        { tag: 'hr' },
+        ...alertCards,
+        { tag: 'hr' },
+        {
+          tag: 'note',
+          elements: [
+            {
+              tag: 'plain_text',
+              content: '由 SSL Certificate Monitoring System 自动发送'
+            }
+          ]
+        }
+      ]
+    }
+  };
+}
+
+// 飞书 Webhook 端点
+app.post('/api/webhooks/lark', async (req, res) => {
+  try {
+    const { webhook_url, secret } = readLarkConfig();
+
+    if (!webhook_url) {
+      return res.status(400).json({
+        success: false,
+        message: '飞书 Webhook 未配置，请先在 ssl_targets.json 中配置 lark_webhook'
+      });
+    }
+
+    const alerts = req.body?.alerts || [];
+
+    if (alerts.length === 0) {
+      return res.json({ success: true, message: '无告警' });
+    }
+
+    const larkPayload = buildLarkAlertCard(alerts);
+
+    // 发送飞书消息
+    const response = await fetch(webhook_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(larkPayload)
+    });
+
+    if (response.ok) {
+      res.json({ success: true, message: '飞书通知发送成功' });
+    } else {
+      const error = await response.text();
+      console.error('Lark webhook error:', error);
+      res.status(500).json({ success: false, message: '飞书通知发送失败' });
+    }
+  } catch (error) {
+    console.error('Lark webhook error:', error);
+    res.status(500).json({ success: false, message: '飞书通知发送失败' });
+  }
+});
+
+// 获取飞书配置
+app.get('/api/webhooks/lark/config', (req, res) => {
+  const config = readLarkConfig();
+  res.json({
+    success: true,
+    data: {
+      configured: !!config?.webhook_url,
+      webhook_url: config?.webhook_url ? '***' + config.webhook_url.slice(-10) : null
+    }
+  });
+});
+
+// 更新飞书配置
+app.put('/api/webhooks/lark/config', (req, res) => {
+  const { webhook_url, secret } = req.body;
+
+  if (!webhook_url) {
+    return res.status(400).json({ success: false, message: 'Webhook URL 不能为空' });
+  }
+
+  try {
+    const config = readConfig();
+    if (!config.settings) {
+      config.settings = {};
+    }
+    config.settings.lark_webhook = { webhook_url, secret: secret || '' };
+
+    if (writeConfig(config)) {
+      res.json({ success: true, message: '飞书配置更新成功' });
+    } else {
+      res.status(500).json({ success: false, message: '保存配置失败' });
+    }
+  } catch (error) {
+    console.error('Error updating Lark config:', error);
+    res.status(500).json({ success: false, message: '更新配置失败' });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`服务运行在 http://0.0.0.0:${PORT}`);
   console.log('API端点:');

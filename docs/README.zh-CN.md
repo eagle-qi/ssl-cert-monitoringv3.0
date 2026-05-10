@@ -210,8 +210,32 @@ ssl-cert-monitoring/
 `alertmanager/alertmanager.yml` 支持：
 
 - **钉钉 Webhook**: 紧急告警通知
+- **飞书 Webhook**: 紧急告警通知
 - **邮件**: 预警通知
 - **抑制规则**: 避免重复告警
+
+### 5. 飞书配置
+
+编辑 `data/ssl_targets.json` 添加飞书 Webhook：
+
+```json
+{
+  "settings": {
+    "lark_webhook": {
+      "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx",
+      "secret": ""
+    }
+  }
+}
+```
+
+**创建飞书群机器人步骤：**
+1. 打开飞书 → 群设置 → 群机器人
+2. 点击 "添加机器人" → "自定义机器人"
+3. 设置名称并复制 Webhook 地址
+4. 将地址粘贴到 `lark_webhook.webhook_url`
+
+飞书 API 端点：`POST /api/webhooks/lark`
 
 ## 告警规则
 
