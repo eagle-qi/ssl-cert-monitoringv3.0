@@ -1,45 +1,45 @@
-# SSL Certificate Monitoring System
+# SSL 证书监控系统
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Prometheus](https://img.shields.io/badge/Prometheus-2.x-E6522C)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-Latest-F46800)](https://grafana.com/)
 
-A complete SSL/TLS certificate expiration monitoring solution that supports monitoring of public domains, internal domains, and internal IP addresses, providing automated alerts and beautiful dashboards.
+一套完整的 SSL/TLS 证书过期监控解决方案，支持公网域名、内网域名和内网 IP 地址的监控，提供自动化告警和美观的监控面板。
 
-[English](README.md) | [简体中文](docs/README.zh-CN.md)
+[English](README.en.md) | 简体中文
 
-## Features
+## 功能特性
 
-- **Multi-target Support**: Monitor public domains, internal domains, and IP addresses
-- **Certificate Details**: Track issuer, subject, SANs, validity period, and owner information
-- **Smart Alerts**: Configurable alert thresholds (30 days warning, 7 days critical)
-- **Multi-channel Notifications**: Support DingTalk, WeChat Work, Email, Slack
-- **Auto-discovery**: File-based target auto-discovery
-- **Persistent Storage**: Docker Volume for data persistence
-- **Grafana Provisioning**: Auto-loading dashboards and data sources
-- **Secure Login**: Login with graphic captcha and custom credentials
-- **Web Dashboard**: Beautiful React-based UI for certificate management
+- **多目标支持**: 监控公网域名、内网域名和 IP 地址
+- **证书详情**: 追踪颁发者、主题、SANs、有效期和负责人信息
+- **智能告警**: 可配置告警阈值（30 天预警，7 天紧急）
+- **多渠道通知**: 支持钉钉、企业微信、邮件、Slack
+- **自动发现**: 基于文件的目标自动发现
+- **持久化存储**: Docker Volume 数据持久化
+- **Grafana Provisioning**: 自动加载数据源和 Dashboard
+- **安全登录**: 图形验证码 + 自定义账号密码
+- **Web Dashboard**: 漂亮的 React 管理界面
 
-## Quick Start
+## 快速开始
 
-### 1. Start Services
+### 1. 启动服务
 
 ```bash
-# Clone the repository
+# 克隆仓库
 git clone https://github.com/eagle-qi/ssl-cert-monitoring.git
 cd ssl-cert-monitoring
 
-# Start with docker-compose
+# 使用 docker-compose 启动
 docker-compose up -d
 
-# Or use the startup script (auto-fixes Dashboard configuration)
+# 或使用启动脚本（自动修复 Dashboard 配置）
 ./start.sh
 ```
 
-### 2. Access Services
+### 2. 访问服务
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
+| 服务 | 地址 | 账号密码 |
+|------|------|----------|
 | Web Dashboard | http://localhost:48080 | gsadmin / REDACTED_ADMIN_PASSWORD |
 | Grafana | http://localhost:43000 | gfadmin / REDACTED_ADMIN_PASSWORD |
 | Prometheus | http://localhost:49090 | - |
@@ -47,69 +47,110 @@ docker-compose up -d
 | Blackbox Exporter | http://localhost:9115 | - |
 | SSL Exporter | http://localhost:9116 | - |
 
-### 3. View Dashboard
+### 3. 查看监控面板
 
-**Web Dashboard (Recommended)**: http://localhost:48080
+**Web Dashboard (推荐)**: http://localhost:48080
 
-Features:
-- 📊 **Dashboard**: Certificate status overview and statistics
-- 📋 **Certificates**: Detailed certificate list
-- 🔔 **Alerts**: Real-time alert monitoring
-- 🎯 **Targets**: Target management
+功能模块：
+- 📊 **仪表盘**: 证书状态概览和统计图表
+- 📋 **证书列表**: 所有证书详细信息列表
+- 🔔 **告警管理**: 实时告警监控
+- 🎯 **目标管理**: 监控目标管理
 
 **Grafana Dashboard**: http://localhost:43000
 
-## Project Structure
+## 项目结构
 
 ```
 ssl-cert-monitoring/
-├── alertmanager/              # Alertmanager configuration
-│   └── alertmanager.yml       # Alert receiver configuration
-├── dashboard/                 # Web Dashboard (React + Vite)
-│   ├── src/                   # React source code
-│   │   ├── components/        # UI components
-│   │   ├── pages/             # Page components
-│   │   ├── hooks/             # Custom React hooks
-│   │   ├── utils/             # Utility functions
-│   │   └── types/             # TypeScript types
-│   ├── server/                # Captcha service (Node.js)
-│   ├── public/                # Static assets
-│   ├── dist/                  # Build output
-│   ├── package.json           # Dependencies
-│   ├── vite.config.ts         # Vite configuration
-│   ├── tailwind.config.js     # Tailwind CSS config
-│   ├── Dockerfile             # Dashboard Docker image
-│   └── nginx.conf             # Nginx configuration
-├── exporter/                  # SSL Exporter
-│   ├── blackbox.yml           # Blackbox Exporter configuration
-│   ├── config.json            # Monitoring target configuration
-│   ├── Dockerfile             # Exporter image build
-│   ├── requirements.txt        # Python dependencies
-│   └── ssl_cert_exporter.py   # Custom SSL Exporter
-├── grafana/                   # Grafana configuration
+├── alertmanager/              # Alertmanager 配置
+│   └── alertmanager.yml       # 告警接收者配置
+├── dashboard/                  # Web Dashboard (React + Vite)
+│   ├── src/                    # React 源代码
+│   │   ├── components/         # UI 组件
+│   │   ├── pages/              # 页面组件
+│   │   │   ├── Dashboard.tsx    # 仪表盘
+│   │   │   ├── Certificates.tsx # 证书列表
+│   │   │   ├── Alerts.tsx       # 告警管理
+│   │   │   ├── Targets.tsx      # 目标管理
+│   │   │   └── Login.tsx       # 登录页面
+│   │   ├── hooks/              # 自定义 Hooks
+│   │   ├── utils/              # 工具函数
+│   │   └── types/              # TypeScript 类型
+│   ├── server/                 # 验证码服务 (Node.js)
+│   ├── public/                 # 静态资源
+│   ├── dist/                   # 构建输出
+│   ├── package.json            # 依赖管理
+│   ├── vite.config.ts          # Vite 配置
+│   ├── tailwind.config.js      # Tailwind CSS 配置
+│   ├── Dockerfile              # Dashboard 镜像构建
+│   └── nginx.conf              # Nginx 配置
+├── exporter/                   # SSL Exporter
+│   ├── blackbox.yml            # Blackbox Exporter 配置
+│   ├── config.json             # 监控目标配置
+│   ├── Dockerfile              # Exporter 镜像构建
+│   ├── requirements.txt        # Python 依赖
+│   └── ssl_cert_exporter.py    # 自定义 SSL Exporter
+├── grafana/                    # Grafana 配置
 │   ├── grafana_ssl_dashboard.json  # Dashboard JSON
-│   └── provisioning/          # Auto-configuration
-│       ├── datasources/       # Data source configuration
-│       ├── dashboards/        # Dashboard configuration
-│       └── alerting/          # Alert configuration
-├── prometheus/                # Prometheus configuration
-│   ├── prometheus.yml         # Main configuration file
-│   ├── ssl_cert_alerts.yml    # Alert rules
-│   └── ssl_targets.json        # Monitoring target list
-├── data/                      # Shared data directory
-│   └── ssl_targets.json        # Unified target configuration
-├── test-cert/                 # Test certificates
-├── docker-compose.yml         # Docker Compose configuration
-├── start.sh                   # Startup script
+│   └── provisioning/           # 自动配置
+│       ├── datasources/        # 数据源配置
+│       ├── dashboards/          # Dashboard 配置
+│       └── alerting/            # 告警配置
+├── prometheus/                 # Prometheus 配置
+│   ├── prometheus.yml          # 主配置文件
+│   ├── ssl_cert_alerts.yml     # 告警规则
+│   └── ssl_targets.json        # 监控目标列表
+├── data/                       # 共享数据目录
+│   └── ssl_targets.json        # 统一目标配置
+├── test-cert/                  # 测试证书
+├── docker-compose.yml          # Docker Compose 配置
+├── start.sh                    # 启动脚本
 ├── LICENSE
 └── README.md
 ```
 
-## Configuration
+## 架构设计
 
-### 1. Add Monitoring Targets
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        SSL 证书监控系统                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐   │
+│   │   Web        │     │  Prometheus  │     │ Alertmanager │   │
+│   │   Dashboard  │◄────│    Server   │────►│   告警发送   │   │
+│   │   (48080)    │     └──────┬───────┘     └──────┬───────┘   │
+│   └──────────────┘            │                    │           │
+│                               │                    │           │
+│                        ┌──────▼───────┐     ┌──────▼───────┐   │
+│                        │ SSL Exporter │     │  钉钉/邮件   │   │
+│                        │   (9116)    │     │   Webhook    │   │
+│                        └──────┬───────┘     └──────────────┘   │
+│                               │                              │
+│                    ┌──────────▼──────────┐                   │
+│                    │   Blackbox Exporter  │                   │
+│                    │      (9115)          │                   │
+│                    └──────────┬──────────┘                   │
+│                               │                               │
+│                    ┌──────────▼──────────┐                   │
+│                    │      目标服务器       │                   │
+│                    │   HTTPS证书探测       │                   │
+│                    └───────────────────┘                    │
+│                                                                 │
+│    ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│    │  公网域名   │  │  内网域名   │  │  内网IP    │        │
+│    │ google.com │  │internal.com │  │192.168.1.x│        │
+│    └─────────────┘  └─────────────┘  └─────────────┘        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-Edit `data/ssl_targets.json` to add domains or IPs to monitor:
+## 配置说明
+
+### 1. 添加监控目标
+
+编辑 `data/ssl_targets.json` 添加要监控的域名或 IP：
 
 ```json
 {
@@ -117,36 +158,36 @@ Edit `data/ssl_targets.json` to add domains or IPs to monitor:
     {
       "type": "domain",
       "url": "www.example.com:443",
-      "owner": "ops-team",
+      "owner": "运维团队",
       "env": "production",
-      "service_name": "Official Website"
+      "service_name": "官网"
     },
     {
       "type": "ip",
       "url": "https://192.168.1.100:443",
-      "owner": "dev-team",
+      "owner": "开发团队",
       "env": "production",
-      "service_name": "Internal System",
+      "service_name": "内部系统",
       "skip_verify": true
     }
   ]
 }
 ```
 
-**Configuration Fields:**
+**配置说明：**
 
-| Field | Description |
-|-------|-------------|
-| type | Target type: `domain` or `ip` |
-| url | Complete HTTPS URL (with port) |
-| owner | Owner/team |
-| env | Environment: `production` or `test` |
-| service_name | Service name |
-| skip_verify | Skip certificate verification (set to true for internal certificates) |
+| 字段 | 说明 |
+|------|------|
+| type | 目标类型：`domain`（域名）或 `ip`（IP 地址） |
+| url | 完整的 HTTPS URL（含端口） |
+| owner | 负责人/团队 |
+| env | 环境：`production`（生产）或 `test`（测试） |
+| service_name | 服务名称 |
+| skip_verify | 是否跳过证书验证（内网证书通常设为 true） |
 
-### 2. Web Dashboard Configuration
+### 2. Web Dashboard 配置
 
-Edit `data/ssl_targets.json` to customize login credentials:
+编辑 `data/ssl_targets.json` 自定义登录账号密码：
 
 ```json
 {
@@ -160,22 +201,22 @@ Edit `data/ssl_targets.json` to customize login credentials:
 }
 ```
 
-### 3. Captcha Service
+### 3. 验证码服务
 
-The captcha service is automatically started with docker-compose. It generates graphic captchas for secure login.
+验证码服务随 docker-compose 自动启动，用于生成图形验证码实现安全登录。
 
-### 4. Alert Configuration
+### 4. 告警配置
 
-`alertmanager/alertmanager.yml` supports:
+`alertmanager/alertmanager.yml` 支持：
 
-- **DingTalk Webhook**: Critical alert notifications
-- **Lark (Feishu) Webhook**: Critical alert notifications
-- **Email**: Warning notifications
-- **Inhibition Rules**: Avoid duplicate alerts
+- **钉钉 Webhook**: 紧急告警通知
+- **飞书 Webhook**: 紧急告警通知
+- **邮件**: 预警通知
+- **抑制规则**: 避免重复告警
 
-### 5. Lark (Feishu) Configuration
+### 5. 飞书配置
 
-Edit `data/ssl_targets.json` to add Lark webhook:
+编辑 `data/ssl_targets.json` 添加飞书 Webhook：
 
 ```json
 {
@@ -188,83 +229,122 @@ Edit `data/ssl_targets.json` to add Lark webhook:
 }
 ```
 
-**To create a Lark webhook:**
-1. Open Lark → Group Settings → Group Bots
-2. Click "Add Bot" → "Custom Bot"
-3. Set a name and copy the Webhook URL
-4. Paste the URL into `lark_webhook.webhook_url`
+**创建飞书群机器人步骤：**
+1. 打开飞书 → 群设置 → 群机器人
+2. 点击 "添加机器人" → "自定义机器人"
+3. 设置名称并复制 Webhook 地址
+4. 将地址粘贴到 `lark_webhook.webhook_url`
 
-Lark API endpoint: `POST /api/webhooks/lark`
+飞书 API 端点：`POST /api/webhooks/lark`
 
-## Alert Rules
+## 告警规则
 
-| Alert Name | Condition | Severity |
-|------------|-----------|----------|
-| SSLCertExpiring | < 30 days | warning |
-| SSLCertExpiringCritical | < 7 days | critical |
-| SSLCertExpired | Expired | critical |
-| SSLCertProbeFailed | Probe failed | warning |
+| 告警名称 | 触发条件 | 严重级别 |
+|----------|----------|----------|
+| SSLCertExpiring | < 30 天过期 | warning |
+| SSLCertExpiringCritical | < 7 天过期 | critical |
+| SSLCertExpired | 已过期 | critical |
+| SSLCertProbeFailed | 探测失败 | warning |
 
-## Service Ports
+## 监控指标
 
-| Service | Container | Port | Purpose |
-|---------|-----------|------|---------|
-| Web Dashboard | ssl-dashboard | 48080 | SSL certificate monitoring UI |
-| Captcha Service | ssl-captcha-service | 3001 | Graphic captcha generation |
-| Prometheus | ssl-prometheus | 49090 | Metrics collection & storage |
-| Grafana | ssl-grafana | 43000 | Visualization |
-| Alertmanager | ssl-alertmanager | 9093 | Alert management |
-| Blackbox Exporter | ssl-blackbox | 9115 | SSL probing |
-| SSL Exporter | ssl-custom-exporter | 9116 | Detailed certificate info |
+| 指标名称 | 类型 | 说明 |
+|---------|------|------|
+| ssl_cert_days_left | Gauge | 证书剩余天数 |
+| ssl_cert_not_after_timestamp | Gauge | 证书过期时间戳 |
+| ssl_cert_not_before_timestamp | Gauge | 证书生效时间戳 |
+| ssl_cert_check_success | Gauge | 检查是否成功 (1=成功, 0=失败) |
+| ssl_cert_issuer | Label | 证书发行机构 |
+| ssl_cert_subject | Label | 证书主题/CN |
+| ssl_cert_owner | Label | 证书负责人 |
+| ssl_cert_serial | Label | 证书序列号 |
+| ssl_cert_sans | Gauge | SANs 域名数量 |
 
-## Common Commands
+## 服务端口
+
+| 服务 | 容器名 | 端口 | 用途 |
+|------|--------|------|------|
+| Web Dashboard | ssl-dashboard | 48080 | SSL 证书监控 Web UI |
+| Captcha Service | ssl-captcha-service | 3001 | 图形验证码服务 |
+| Prometheus | ssl-prometheus | 49090 | 指标收集与存储 |
+| Grafana | ssl-grafana | 43000 | 可视化面板 |
+| Alertmanager | ssl-alertmanager | 9093 | 告警管理 |
+| Blackbox Exporter | ssl-blackbox | 9115 | SSL 探测 |
+| SSL Exporter | ssl-custom-exporter | 9116 | 详细证书信息 |
+
+## 数据持久化
+
+使用 Docker Volume 确保数据持久化：
+
+```yaml
+volumes:
+  prometheus-data:/prometheus      # Prometheus 数据
+  grafana-data:/var/lib/grafana    # Grafana 数据
+  alertmanager-data:/alertmanager  # Alertmanager 数据
+```
+
+## 常用命令
 
 ```bash
-# Start all services
+# 启动所有服务
 docker-compose up -d
 
-# View service status
+# 查看服务状态
 docker-compose ps
 
-# View logs
+# 查看日志
 docker-compose logs -f prometheus
 docker-compose logs -f grafana
 docker-compose logs -f dashboard
 
-# Stop services
+# 停止服务
 docker-compose down
 
-# Restart services
+# 重启服务
 docker-compose restart
 
-# Rebuild and restart a specific service
+# 重新构建 SSL Exporter
 docker-compose build ssl-exporter
 docker-compose up -d ssl-exporter
 ```
 
-## Troubleshooting
+## 故障排查
 
-### Dashboard Failed to Load
-If Dashboard shows errors:
+### Dashboard 加载失败
+如果 Dashboard 显示错误：
 ```bash
-# Use startup script to auto-fix
+# 使用启动脚本自动修复
 ./start.sh
 ```
 
-### Certificate Info Fetch Failed
-Check target configuration and `skip_verify` setting:
+### 证书信息获取失败
+检查目标配置和 `skip_verify` 设置：
 ```bash
-# View SSL Exporter logs
+# 查看 SSL Exporter 日志
 docker-compose logs ssl-custom-exporter
 ```
 
-### Alerts Not Triggering
-Verify Alertmanager configuration:
+### 告警未触发
+确认 Alertmanager 配置正确：
 ```bash
-# Check Prometheus alert status
+# 查看 Prometheus 告警状态
 curl http://localhost:49090/api/v1/alerts
 ```
 
-## License
+## 常见问题
 
-MIT License - See [LICENSE](LICENSE) file for details.
+### Q1: 内网 IP 无法访问？
+检查防火墙规则，确保监控服务器可以访问内网 IP 的 443 端口。
+
+### Q2: 自签名证书检查失败？
+Exporter 默认会检查证书，但会跳过证书链验证。如果需要忽略证书验证，可以在配置中设置 `skip_verify: true`。
+
+### Q3: 如何添加更多监控目标？
+直接在 `data/ssl_targets.json` 的 `targets` 数组中添加新的目标即可。
+
+### Q4: 告警通知没有收到？
+检查 Alertmanager 日志，确认 Webhook 配置正确。
+
+## 许可证
+
+MIT License - 详见 [LICENSE](../LICENSE) 文件。
