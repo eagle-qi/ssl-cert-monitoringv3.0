@@ -40,7 +40,7 @@ docker-compose up -d
 
 | 服务 | 地址 | 账号密码 |
 |------|------|----------|
-| Web Dashboard | http://localhost:48080 | admin / admin123 |
+| Web Dashboard | http://localhost:48080 | gsadmin / REDACTED_ADMIN_PASSWORD |
 | Grafana | http://localhost:43000 | admin / admin |
 | Prometheus | http://localhost:49090 | - |
 | Alertmanager | http://localhost:9093 | - |
