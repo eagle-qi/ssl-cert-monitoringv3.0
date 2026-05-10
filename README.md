@@ -146,13 +146,18 @@ Edit `data/ssl_targets.json` to add domains or IPs to monitor:
 
 ### 2. Web Dashboard Configuration
 
-Edit `docker-compose.yml` to customize login credentials:
+Edit `data/ssl_targets.json` to customize login credentials:
 
-```yaml
-dashboard:
-  environment:
-    - ADMIN_USERNAME=your_username
-    - ADMIN_PASSWORD=your_password
+```json
+{
+  "settings": {
+    ...
+  },
+  "admin": {
+    "username": "your_username",
+    "password": "your_password"
+  }
+}
 ```
 
 ### 3. Captcha Service

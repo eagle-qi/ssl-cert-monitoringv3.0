@@ -187,13 +187,18 @@ ssl-cert-monitoring/
 
 ### 2. Web Dashboard 配置
 
-编辑 `docker-compose.yml` 自定义登录账号密码：
+编辑 `data/ssl_targets.json` 自定义登录账号密码：
 
-```yaml
-dashboard:
-  environment:
-    - ADMIN_USERNAME=your_username
-    - ADMIN_PASSWORD=your_password
+```json
+{
+  "settings": {
+    ...
+  },
+  "admin": {
+    "username": "your_username",
+    "password": "your_password"
+  }
+}
 ```
 
 ### 3. 验证码服务
