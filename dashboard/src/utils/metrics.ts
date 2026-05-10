@@ -13,13 +13,15 @@ export function parseMetrics(text: string): SSLCertData[] {
     if (line.startsWith('#') || !line.trim()) continue;
     
     // 匹配格式: metric_name{label1="value1",...} value
-    const match = line.match(/^(\w+)\{([^}]+)\}\s+([\d.]+)$/);
+    // 使用更宽松的匹配来处理包含 } 的标签值
+    const match = line.match(/^(\w+)\{(.+)\}\s+([\d.]+)$/);
     if (!match) continue;
     
     const [, metricName, labelsStr, valueStr] = match;
     const labels: { [key: string]: string } = {};
     
-    // 解析标签（处理转义的引号）
+    // 解析标签（处理转义的引号和嵌套的大括号）
+    // 使用贪婪匹配来正确处理包含复杂值的标签
     const labelMatches = labelsStr.matchAll(/(\w+)="((?:[^"\\]|\\.)*)"/g);
     for (const [, key, value] of labelMatches) {
       // 解码转义的引号
