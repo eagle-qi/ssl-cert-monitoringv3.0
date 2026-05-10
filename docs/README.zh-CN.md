@@ -4,7 +4,7 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-2.x-E6522C)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-Latest-F46800)](https://grafana.com/)
 
-一套完整的 SSL/TLS 证书过期监控解决方案，支持公网域名、内网域名和内网 IP 地址的监控，提供自动化告警和美观的 Grafana 监控面板。
+一套完整的 SSL/TLS 证书过期监控解决方案，支持公网域名、内网域名和内网 IP 地址的监控，提供自动化告警和美观的监控面板。
 
 [English](../README.md) | 简体中文
 
@@ -17,6 +17,8 @@
 - **自动发现**: 基于文件的目标自动发现
 - **持久化存储**: Docker Volume 数据持久化
 - **Grafana Provisioning**: 自动加载数据源和 Dashboard
+- **安全登录**: 图形验证码 + 自定义账号密码
+- **Web Dashboard**: 漂亮的 React 管理界面
 
 ## 快速开始
 
@@ -38,15 +40,24 @@ docker-compose up -d
 
 | 服务 | 地址 | 账号密码 |
 |------|------|----------|
-| Grafana | http://localhost:3000 | admin / admin |
-| Prometheus | http://localhost:9090 | - |
+| Web Dashboard | http://localhost:48080 | admin / admin123 |
+| Grafana | http://localhost:43000 | admin / admin |
+| Prometheus | http://localhost:49090 | - |
 | Alertmanager | http://localhost:9093 | - |
 | Blackbox Exporter | http://localhost:9115 | - |
 | SSL Exporter | http://localhost:9116 | - |
 
 ### 3. 查看监控面板
 
-访问 Grafana Dashboard: http://localhost:3000/d/ssl-cert-monitoring
+**Web Dashboard (推荐)**: http://localhost:48080
+
+功能模块：
+- 📊 **仪表盘**: 证书状态概览和统计图表
+- 📋 **证书列表**: 所有证书详细信息列表
+- 🔔 **告警管理**: 实时告警监控
+- 🎯 **目标管理**: 监控目标管理
+
+**Grafana Dashboard**: http://localhost:43000
 
 ## 项目结构
 
@@ -54,27 +65,47 @@ docker-compose up -d
 ssl-cert-monitoring/
 ├── alertmanager/              # Alertmanager 配置
 │   └── alertmanager.yml       # 告警接收者配置
-├── exporter/                  # SSL Exporter
-│   ├── blackbox.yml           # Blackbox Exporter 配置
-│   ├── config.json            # 监控目标配置
-│   ├── Dockerfile            # Exporter 镜像构建
-│   ├── requirements.txt       # Python 依赖
-│   └── ssl_cert_exporter.py   # 自定义 SSL Exporter
-├── grafana/                   # Grafana 配置
+├── dashboard/                  # Web Dashboard (React + Vite)
+│   ├── src/                    # React 源代码
+│   │   ├── components/         # UI 组件
+│   │   ├── pages/              # 页面组件
+│   │   │   ├── Dashboard.tsx    # 仪表盘
+│   │   │   ├── Certificates.tsx # 证书列表
+│   │   │   ├── Alerts.tsx       # 告警管理
+│   │   │   ├── Targets.tsx      # 目标管理
+│   │   │   └── Login.tsx       # 登录页面
+│   │   ├── hooks/              # 自定义 Hooks
+│   │   ├── utils/              # 工具函数
+│   │   └── types/              # TypeScript 类型
+│   ├── server/                 # 验证码服务 (Node.js)
+│   ├── public/                 # 静态资源
+│   ├── dist/                   # 构建输出
+│   ├── package.json            # 依赖管理
+│   ├── vite.config.ts          # Vite 配置
+│   ├── tailwind.config.js      # Tailwind CSS 配置
+│   ├── Dockerfile              # Dashboard 镜像构建
+│   └── nginx.conf              # Nginx 配置
+├── exporter/                   # SSL Exporter
+│   ├── blackbox.yml            # Blackbox Exporter 配置
+│   ├── config.json             # 监控目标配置
+│   ├── Dockerfile              # Exporter 镜像构建
+│   ├── requirements.txt        # Python 依赖
+│   └── ssl_cert_exporter.py    # 自定义 SSL Exporter
+├── grafana/                    # Grafana 配置
 │   ├── grafana_ssl_dashboard.json  # Dashboard JSON
-│   └── provisioning/          # 自动配置
-│       ├── datasources/       # 数据源配置
-│       ├── dashboards/        # Dashboard 配置
-│       └── alerting/          # 告警配置
-├── prometheus/                # Prometheus 配置
-│   ├── prometheus.yml         # 主配置文件
-│   ├── ssl_cert_alerts.yml    # 告警规则
-│   └── ssl_targets.json       # 监控目标列表
-├── docs/                      # 文档
-├── images/                    # 架构图
-├── test-cert/                 # 测试证书
-├── docker-compose.yml         # Docker Compose 配置
-├── start.sh                   # 启动脚本
+│   └── provisioning/           # 自动配置
+│       ├── datasources/        # 数据源配置
+│       ├── dashboards/          # Dashboard 配置
+│       └── alerting/            # 告警配置
+├── prometheus/                 # Prometheus 配置
+│   ├── prometheus.yml          # 主配置文件
+│   ├── ssl_cert_alerts.yml     # 告警规则
+│   └── ssl_targets.json        # 监控目标列表
+├── data/                       # 共享数据目录
+│   └── ssl_targets.json        # 统一目标配置
+├── test-cert/                  # 测试证书
+├── docker-compose.yml          # Docker Compose 配置
+├── start.sh                    # 启动脚本
 ├── LICENSE
 └── README.md
 ```
@@ -86,25 +117,25 @@ ssl-cert-monitoring/
 │                        SSL 证书监控系统                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐  │
-│   │   Grafana    │     │  Prometheus  │     │ Alertmanager │  │
-│   │   Dashboard  │◄────│    Server   │────►│   告警发送   │  │
-│   └──────────────┘     └──────┬───────┘     └──────┬───────┘  │
+│   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐   │
+│   │   Web        │     │  Prometheus  │     │ Alertmanager │   │
+│   │   Dashboard  │◄────│    Server   │────►│   告警发送   │   │
+│   │   (48080)    │     └──────┬───────┘     └──────┬───────┘   │
+│   └──────────────┘            │                    │           │
 │                               │                    │           │
-│                               │                    │           │
-│                        ┌──────▼───────┐     ┌──────▼───────┐  │
-│                        │ SSL Exporter │     │  钉钉/邮件   │  │
-│                        │   (9116)    │     │   Webhook    │  │
+│                        ┌──────▼───────┐     ┌──────▼───────┐   │
+│                        │ SSL Exporter │     │  钉钉/邮件   │   │
+│                        │   (9116)    │     │   Webhook    │   │
 │                        └──────┬───────┘     └──────────────┘   │
+│                               │                              │
+│                    ┌──────────▼──────────┐                   │
+│                    │   Blackbox Exporter  │                   │
+│                    │      (9115)          │                   │
+│                    └──────────┬──────────┘                   │
 │                               │                               │
-│                    ┌──────────▼──────────┐                    │
-│                    │   Blackbox Exporter │                    │
-│                    │      (9115)         │                    │
-│                    └──────────┬──────────┘                    │
-│                               │                               │
-│                    ┌──────────▼──────────┐                    │
-│                    │      目标服务器      │                    │
-│                    │   HTTPS证书探测      │                    │
+│                    ┌──────────▼──────────┐                   │
+│                    │      目标服务器       │                   │
+│                    │   HTTPS证书探测       │                   │
 │                    └───────────────────┘                    │
 │                                                                 │
 │    ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
@@ -119,7 +150,7 @@ ssl-cert-monitoring/
 
 ### 1. 添加监控目标
 
-编辑 `exporter/config.json` 添加要监控的域名或 IP：
+编辑 `data/ssl_targets.json` 添加要监控的域名或 IP：
 
 ```json
 {
@@ -154,32 +185,22 @@ ssl-cert-monitoring/
 | service_name | 服务名称 |
 | skip_verify | 是否跳过证书验证（内网证书通常设为 true） |
 
-### 2. Prometheus 配置
+### 2. Web Dashboard 配置
 
-`prometheus/prometheus.yml` 主要配置：
+编辑 `docker-compose.yml` 自定义登录账号密码：
 
 ```yaml
-scrape_configs:
-  # Blackbox Exporter - 文件自动发现目标
-  - job_name: 'ssl-blackbox'
-    metrics_path: /probe
-    params:
-      module: [http_ssl_cert]
-    file_sd_configs:
-      - files:
-          - '/etc/prometheus/ssl_targets.json'
-        refresh_interval: 60s
-    relabel_configs:
-      - target_label: __address__
-        replacement: ssl-blackbox:9115
-
-  # Custom SSL Exporter - 详细证书信息
-  - job_name: 'ssl-cert-exporter'
-    static_configs:
-      - targets: ['ssl-custom-exporter:9116']
+dashboard:
+  environment:
+    - ADMIN_USERNAME=your_username
+    - ADMIN_PASSWORD=your_password
 ```
 
-### 3. 告警配置
+### 3. 验证码服务
+
+验证码服务随 docker-compose 自动启动，用于生成图形验证码实现安全登录。
+
+### 4. 告警配置
 
 `alertmanager/alertmanager.yml` 支持：
 
@@ -214,8 +235,10 @@ scrape_configs:
 
 | 服务 | 容器名 | 端口 | 用途 |
 |------|--------|------|------|
-| Prometheus | ssl-prometheus | 9090 | 指标收集与存储 |
-| Grafana | ssl-grafana | 3000 | 可视化面板 |
+| Web Dashboard | ssl-dashboard | 48080 | SSL 证书监控 Web UI |
+| Captcha Service | ssl-captcha-service | 3001 | 图形验证码服务 |
+| Prometheus | ssl-prometheus | 49090 | 指标收集与存储 |
+| Grafana | ssl-grafana | 43000 | 可视化面板 |
 | Alertmanager | ssl-alertmanager | 9093 | 告警管理 |
 | Blackbox Exporter | ssl-blackbox | 9115 | SSL 探测 |
 | SSL Exporter | ssl-custom-exporter | 9116 | 详细证书信息 |
@@ -243,6 +266,7 @@ docker-compose ps
 # 查看日志
 docker-compose logs -f prometheus
 docker-compose logs -f grafana
+docker-compose logs -f dashboard
 
 # 停止服务
 docker-compose down
@@ -258,7 +282,7 @@ docker-compose up -d ssl-exporter
 ## 故障排查
 
 ### Dashboard 加载失败
-如果 Dashboard 显示 "Data source not found"：
+如果 Dashboard 显示错误：
 ```bash
 # 使用启动脚本自动修复
 ./start.sh
@@ -275,7 +299,7 @@ docker-compose logs ssl-custom-exporter
 确认 Alertmanager 配置正确：
 ```bash
 # 查看 Prometheus 告警状态
-curl http://localhost:9090/api/v1/alerts
+curl http://localhost:49090/api/v1/alerts
 ```
 
 ## 常见问题
@@ -287,7 +311,7 @@ curl http://localhost:9090/api/v1/alerts
 Exporter 默认会检查证书，但会跳过证书链验证。如果需要忽略证书验证，可以在配置中设置 `skip_verify: true`。
 
 ### Q3: 如何添加更多监控目标？
-直接在 `exporter/config.json` 的 `targets` 数组中添加新的目标即可。
+直接在 `data/ssl_targets.json` 的 `targets` 数组中添加新的目标即可。
 
 ### Q4: 告警通知没有收到？
 检查 Alertmanager 日志，确认 Webhook 配置正确。
