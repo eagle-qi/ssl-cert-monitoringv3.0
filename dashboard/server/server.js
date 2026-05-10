@@ -106,6 +106,90 @@ app.post('/api/captcha/verify', (req, res) => {
   return res.json({ success: false, message: '验证码错误' });
 });
 
+// 读取管理员配置
+function readAdminConfig() {
+  try {
+    const config = readConfig();
+    return config.admin || { username: 'admin', password: 'admin123' };
+  } catch (error) {
+    console.error('Error reading admin config:', error);
+    return { username: 'admin', password: 'admin123' };
+  }
+}
+
+// ==================== 登录验证 API ====================
+
+// 验证登录
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  
+  if (!username || !password) {
+    return res.json({ success: false, message: '缺少用户名或密码' });
+  }
+
+  const admin = readAdminConfig();
+  
+  if (username === admin.username && password === admin.password) {
+    return res.json({ 
+      success: true, 
+      message: '登录成功',
+      user: { username: admin.username }
+    });
+  }
+
+  return res.json({ success: false, message: '用户名或密码错误' });
+});
+
+// 获取管理员配置（不包含密码）
+app.get('/api/auth/config', (req, res) => {
+  const admin = readAdminConfig();
+  res.json({ 
+    success: true, 
+    data: { username: admin.username }
+  });
+});
+
+// 更新管理员密码
+app.put('/api/auth/password', (req, res) => {
+  const { oldPassword, newPassword, confirmPassword } = req.body;
+  
+  if (!oldPassword || !newPassword || !confirmPassword) {
+    return res.json({ success: false, message: '缺少参数' });
+  }
+
+  if (newPassword !== confirmPassword) {
+    return res.json({ success: false, message: '两次输入的密码不一致' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.json({ success: false, message: '新密码长度不能少于6位' });
+  }
+
+  const admin = readAdminConfig();
+  
+  if (oldPassword !== admin.password) {
+    return res.json({ success: false, message: '原密码错误' });
+  }
+
+  try {
+    const config = readConfig();
+    if (!config.admin) {
+      config.admin = {};
+    }
+    config.admin.username = admin.username;
+    config.admin.password = newPassword;
+    
+    if (writeConfig(config)) {
+      return res.json({ success: true, message: '密码修改成功' });
+    } else {
+      return res.status(500).json({ success: false, message: '保存配置失败' });
+    }
+  } catch (error) {
+    console.error('Error updating password:', error);
+    return res.status(500).json({ success: false, message: '修改密码失败' });
+  }
+});
+
 // ==================== 目标管理 API ====================
 
 // 读取配置文件
@@ -340,6 +424,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('  === 验证码 ===');
   console.log('  GET  /api/captcha?sessionId=<sessionId> - 获取验证码');
   console.log('  POST /api/captcha/verify - 验证验证码');
+  console.log('  === 登录验证 ===');
+  console.log('  POST /api/auth/login - 验证登录');
+  console.log('  GET  /api/auth/config - 获取管理员配置');
+  console.log('  PUT  /api/auth/password - 修改密码');
   console.log('  === 目标管理 ===');
   console.log('  GET    /api/targets - 获取所有目标');
   console.log('  POST   /api/targets - 添加新目标');

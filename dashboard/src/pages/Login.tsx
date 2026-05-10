@@ -63,10 +63,8 @@ export default function Login() {
       return;
     }
     
-    // 验证用户名密码
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const user = login(username, password);
+    // 验证用户名密码（通过API）
+    const user = await login(username, password);
     
     if (user) {
       navigate('/dashboard');
