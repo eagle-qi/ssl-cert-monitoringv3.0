@@ -48,6 +48,15 @@ export function parseMetrics(text: string): SSLCertData[] {
         serial: labels.serial || '',
         is_webtrust: 0,
       });
+    } else {
+      // 如果已有记录，但新行包含证书详情标签，则更新这些字段
+      const existing = metrics.get(key)!;
+      if (labels.subject_cn && !existing.subject_cn) existing.subject_cn = labels.subject_cn;
+      if (labels.issuer_cn && !existing.issuer_cn) existing.issuer_cn = labels.issuer_cn;
+      if (labels.issuer_org && !existing.issuer_org) existing.issuer_org = labels.issuer_org;
+      if (labels.subject && !existing.subject) existing.subject = labels.subject;
+      if (labels.issuer && !existing.issuer) existing.issuer = labels.issuer;
+      if (labels.serial && !existing.serial) existing.serial = labels.serial;
     }
     
     if (!values.has(key)) {
