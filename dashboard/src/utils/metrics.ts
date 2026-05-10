@@ -19,13 +19,14 @@ export function parseMetrics(text: string): SSLCertData[] {
     const [, metricName, labelsStr, valueStr] = match;
     const labels: { [key: string]: string } = {};
     
-    // 解析标签
-    const labelMatches = labelsStr.matchAll(/(\w+)="([^"]*)"/g);
+    // 解析标签（处理转义的引号）
+    const labelMatches = labelsStr.matchAll(/(\w+)="((?:[^"\\]|\\.)*)"/g);
     for (const [, key, value] of labelMatches) {
-      labels[key] = value;
+      // 解码转义的引号
+      labels[key] = value.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
     }
     
-    const value = metricName.includes('timestamp') || metricName === 'ssl_cert_check_success' || metricName === 'ssl_cert_sans_count' || metricName === 'ssl_cert_serial'
+    const value = metricName.includes('timestamp') || metricName === 'ssl_cert_check_success' || metricName === 'ssl_cert_sans_count' || metricName === 'ssl_cert_serial' || metricName === 'ssl_cert_is_webtrust'
       ? parseInt(valueStr)
       : parseFloat(valueStr);
     
@@ -34,16 +35,18 @@ export function parseMetrics(text: string): SSLCertData[] {
     
     if (!metrics.has(key)) {
       metrics.set(key, {
-        hostname: labels.hostname,
-        port: labels.port,
+        hostname: labels.hostname || '',
+        port: labels.port || '443',
         owner: labels.owner || '未知',
         env: labels.env || '未知',
-        service_name: labels.service_name || labels.hostname,
-        subject_cn: labels.subject_cn,
-        issuer_cn: labels.issuer_cn,
-        subject: labels.subject,
-        issuer: labels.issuer,
-        serial: labels.serial,
+        service_name: labels.service_name || labels.hostname || '',
+        subject_cn: labels.subject_cn || '',
+        issuer_cn: labels.issuer_cn || '',
+        issuer_org: labels.issuer_org || '',
+        subject: labels.subject || '',
+        issuer: labels.issuer || '',
+        serial: labels.serial || '',
+        is_webtrust: 0,
       });
     }
     
@@ -65,6 +68,7 @@ export function parseMetrics(text: string): SSLCertData[] {
     const daysLeft = vals.days_left as number;
     const checkSuccess = vals.check_success as number;
     const sansCount = vals.sans_count as number;
+    const isWebtrust = vals.is_webtrust as number || 0;
     
     // 计算状态
     let status: 'valid' | 'warning' | 'critical' | 'expired' = 'valid';
@@ -89,6 +93,7 @@ export function parseMetrics(text: string): SSLCertData[] {
       check_success: checkSuccess,
       sans_count: sansCount,
       serial_value: vals.serial as number,
+      is_webtrust: isWebtrust,
       not_after_date: formatDate(notAfterTimestamp * 1000),
       not_before_date: formatDate(notBeforeTimestamp * 1000),
       days_until_expiry: daysLeft,

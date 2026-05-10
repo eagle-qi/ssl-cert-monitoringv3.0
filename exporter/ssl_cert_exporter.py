@@ -43,6 +43,109 @@ CONFIG = {
     "settings": {}
 }
 
+# WebTrust 认证的 CA 组织名称列表
+WEBTRUST_CA_PATTERNS = [
+    'DigiCert',
+    'GlobalSign',
+    "Let's Encrypt",
+    'ISRG',
+    'Comodo',
+    'Sectigo',
+    'Entrust',
+    'Thawte',
+    'GeoTrust',
+    'RapidSSL',
+    'GoDaddy',
+    ' Symantec',
+    'DigiCert Inc',
+    'Google Trust Services',
+    'Amazon',
+    'Microsoft',
+    'TrustAsia',
+    'SecureSite',
+    'Equifax',
+    'VeriSign',
+    'VeriSign, Inc.',
+    'GTS',
+    'Google Trust Services LLC',
+    'Cloudflare, Inc.',
+    'ZeroSSL',
+    'SSL.com',
+    'eMudhra',
+    'Actalis',
+    'Buypass',
+    'HARICA',
+    'Secom',
+    'SW assin',
+    'Taiwan CA',
+    'vTrus',
+    'WoSign',
+    'DunTrus',
+    'CerSign',
+    'Guangxi SINNET',
+    '特阳',
+    'CFCA',
+    '华测',
+    '网证通',
+    '北京天津',
+    '四川省数字证书',
+    '上海CA',
+    '广东省电子商务认证',
+    '新疆数字证书',
+    'WoTrus',
+    '奇安信',
+    'H3C',
+    '数安时代',
+    '浙江拇指',
+    '北京恩刻',
+    '天威诚信',
+    'iTrusChina',
+    'GDCA',
+    '中科三方',
+    '沃通',
+    'STARTCom',
+    '自由卡',
+    'Starfield',
+    'Amazon Root CA',
+    'Baltimore CyberTrust',
+    'Entrust Root',
+    'GlobalSign Root',
+    'IdenTrust',
+    'Trustwave',
+    'D-TRUST',
+    'NetLock',
+    'Qualified',
+    'SwissSign',
+    'T-TeleSec',
+    'LuxTrust',
+    'QuoVadis',
+    'Camerfirma',
+    'Chambers of Commerce',
+    'Comodo Certified',
+    ' thawte',
+    'VeriSign Trust',
+]
+
+
+def is_webtrust_ca(issuer_org: str) -> bool:
+    """
+    判断颁发者是否为 WebTrust 认证的 CA
+    
+    Args:
+        issuer_org: 颁发者组织名称
+        
+    Returns:
+        bool: 是否为 WebTrust 认证
+    """
+    if not issuer_org:
+        return False
+    
+    issuer_upper = issuer_org.upper()
+    for pattern in WEBTRUST_CA_PATTERNS:
+        if pattern.upper() in issuer_upper:
+            return True
+    return False
+
 # 配置文件的最后修改时间，用于检测变更
 CONFIG_FILE_MTIME = 0
 
@@ -327,6 +430,14 @@ def generate_blackbox_targets():
     return targets
 
 
+def escape_prometheus_label(value: str) -> str:
+    """转义 Prometheus 标签值中的特殊字符"""
+    if not value:
+        return ''
+    # 转义双引号和反斜杠
+    return value.replace('\\', '\\\\').replace('"', '\\"')
+
+
 def generate_prometheus_metrics():
     """生成Prometheus格式的metrics"""
     metrics = []
@@ -344,6 +455,8 @@ def generate_prometheus_metrics():
     metrics.append('# TYPE ssl_cert_serial gauge')
     metrics.append('# HELP ssl_cert_sans_count SSL certificate Subject Alternative Names count')
     metrics.append('# TYPE ssl_cert_sans_count gauge')
+    metrics.append('# HELP ssl_cert_is_webtrust SSL certificate is issued by WebTrust certified CA (1=yes, 0=no)')
+    metrics.append('# TYPE ssl_cert_is_webtrust gauge')
     
     for target in CONFIG.get('targets', []):
         url = target.get('url')
@@ -366,13 +479,20 @@ def generate_prometheus_metrics():
         logger.info(f"Checking certificate for {hostname}:{port}")
         cert_info = get_cert_info(hostname, port, skip_verify=skip_verify)
         
+        # 转义所有标签值
+        hostname_esc = escape_prometheus_label(hostname)
+        port_str = str(port)
+        owner_esc = escape_prometheus_label(owner)
+        env_esc = escape_prometheus_label(env)
+        service_name_esc = escape_prometheus_label(service_name)
+        
         # 基础标签
         labels = (
-            f'hostname="{hostname}",'
-            f'port="{port}",'
-            f'owner="{owner}",'
-            f'env="{env}",'
-            f'service_name="{service_name}"'
+            f'hostname="{hostname_esc}",'
+            f'port="{port_str}",'
+            f'owner="{owner_esc}",'
+            f'env="{env_esc}",'
+            f'service_name="{service_name_esc}"'
         )
         
         # SSL检查是否成功
@@ -394,27 +514,42 @@ def generate_prometheus_metrics():
         if cert_info['not_before']:
             metrics.append(f'ssl_cert_not_before_timestamp{{{labels}}} {cert_info["not_before"]}')
         
-        # 添加带证书详细信息的标签
-        subject_str = cert_info['subject'].get('commonName', '')
-        issuer_str = cert_info['issuer'].get('commonName', cert_info['issuer'].get('organizationName', ''))
+        # 获取证书详细信息
+        subject_cn = cert_info['subject'].get('commonName', '')
+        issuer_cn = cert_info['issuer'].get('commonName', '')
+        issuer_org = cert_info['issuer'].get('organizationName', issuer_cn)
         
+        # 转义证书信息
+        subject_cn_esc = escape_prometheus_label(subject_cn)
+        issuer_cn_esc = escape_prometheus_label(issuer_cn)
+        issuer_org_esc = escape_prometheus_label(issuer_org)
+        subject_json_esc = escape_prometheus_label(json.dumps(cert_info['subject']))
+        issuer_json_esc = escape_prometheus_label(json.dumps(cert_info['issuer']))
+        
+        # 添加带证书详细信息的标签
         detail_labels = (
             f'{labels},'
-            f'subject_cn="{subject_str}",'
-            f'issuer_cn="{issuer_str}",'
-            f'subject="{json.dumps(cert_info["subject"]).replace(chr(34), chr(92)+chr(34))}",'
-            f'issuer="{json.dumps(cert_info["issuer"]).replace(chr(34), chr(92)+chr(34))}"'
+            f'subject_cn="{subject_cn_esc}",'
+            f'issuer_cn="{issuer_cn_esc}",'
+            f'issuer_org="{issuer_org_esc}",'
+            f'subject="{subject_json_esc}",'
+            f'issuer="{issuer_json_esc}"'
         )
+        
+        # WebTrust 认证检测
+        is_webtrust = 1 if is_webtrust_ca(issuer_org) else 0
+        metrics.append(f'ssl_cert_is_webtrust{{{detail_labels}}} {is_webtrust}')
         
         # SANs数量
         metrics.append(f'ssl_cert_sans_count{{{detail_labels}}} {len(cert_info["sans"])}')
         
         # 序列号（作为标签，值为1）
         serial = cert_info.get('serial', 'unknown')
-        serial_labels = f'{detail_labels},serial="{serial}"'
+        serial_esc = escape_prometheus_label(serial)
+        serial_labels = f'{detail_labels},serial="{serial_esc}"'
         metrics.append(f'ssl_cert_serial{{{serial_labels}}} 1')
         
-        logger.info(f"Certificate for {hostname}:{port} - Days left: {cert_info['days_left']}, Issuer: {issuer_str}")
+        logger.info(f"Certificate for {hostname}:{port} - Days left: {cert_info['days_left']}, Issuer: {issuer_org}, WebTrust: {is_webtrust}")
     
     return '\n'.join(metrics) + '\n'
 
