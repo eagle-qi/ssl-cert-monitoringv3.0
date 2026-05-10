@@ -6,9 +6,11 @@ export interface SSLCertMetric {
   service_name: string;
   subject_cn?: string;
   issuer_cn?: string;
+  issuer_org?: string;
   subject?: string;
   issuer?: string;
   serial?: string;
+  is_webtrust?: number;
 }
 
 export interface SSLCertData extends SSLCertMetric {

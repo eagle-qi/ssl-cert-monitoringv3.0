@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, RefreshCw, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Filter, RefreshCw, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield, ShieldOff } from 'lucide-react';
 import { SSLCertData } from '../types';
 import { fetchMetrics, filterCertificates, getUniqueValues } from '../utils/metrics';
 
@@ -230,6 +230,9 @@ export default function Certificates() {
                   环境
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  WebTrust
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   剩余天数
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -274,6 +277,19 @@ export default function Certificates() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
+                        {cert.is_webtrust ? (
+                          <div className="flex items-center space-x-1 text-green-600" title={`颁发者: ${cert.issuer_org || cert.issuer_cn}`}>
+                            <Shield className="h-5 w-5" />
+                            <span className="text-sm font-medium">已认证</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-1 text-gray-400" title={cert.issuer_org || '未知颁发者'}>
+                            <ShieldOff className="h-5 w-5" />
+                            <span className="text-sm">未认证</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <p className={`font-bold ${
                           cert.days_left <= 7 ? 'text-red-600' :
                           cert.days_left <= 30 ? 'text-amber-600' :
@@ -304,14 +320,15 @@ export default function Certificates() {
                     {/* 展开的详情行 */}
                     {isExpanded && (
                       <tr key={`${index}-detail`}>
-                        <td colSpan={8} className="px-6 py-4 bg-gray-50">
+                        <td colSpan={9} className="px-6 py-4 bg-gray-50">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <div>
                               <h4 className="text-sm font-medium text-gray-700 mb-2">证书信息</h4>
                               <div className="space-y-2 text-sm">
-                                <p><span className="text-gray-500">主题CN:</span> {cert.subject_cn || '-'}</p>
-                                <p><span className="text-gray-500">颁发者CN:</span> {cert.issuer_cn || '-'}</p>
-                                <p><span className="text-gray-500">序列号:</span> {cert.serial || '-'}</p>
+                                <p><span className="text-gray-500">主题CN:</span> <span className="font-mono">{cert.subject_cn || '-'}</span></p>
+                                <p><span className="text-gray-500">颁发者CN:</span> <span className="font-mono">{cert.issuer_cn || '-'}</span></p>
+                                <p><span className="text-gray-500">颁发者组织:</span> <span className="font-mono">{cert.issuer_org || '-'}</span></p>
+                                <p><span className="text-gray-500">序列号:</span> <span className="font-mono text-xs">{cert.serial || '-'}</span></p>
                                 <p><span className="text-gray-500">SAN数量:</span> {cert.sans_count}</p>
                               </div>
                             </div>
@@ -336,6 +353,18 @@ export default function Certificates() {
                                     {cert.check_success ? ' 通过' : ' 失败'}
                                   </span>
                                 </p>
+                                <p>
+                                  <span className="text-gray-500">WebTrust认证:</span>
+                                  {cert.is_webtrust ? (
+                                    <span className="inline-flex items-center ml-1 text-green-600">
+                                      <Shield className="h-4 w-4 mr-0.5" /> 是
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center ml-1 text-gray-400">
+                                      <ShieldOff className="h-4 w-4 mr-0.5" /> 否
+                                    </span>
+                                  )}
+                                </p>
                               </div>
                             </div>
                             
@@ -343,7 +372,13 @@ export default function Certificates() {
                               <div className="md:col-span-2 lg:col-span-3">
                                 <h4 className="text-sm font-medium text-gray-700 mb-2">证书主题详情</h4>
                                 <pre className="bg-gray-100 p-3 rounded text-xs overflow-x-auto">
-                                  {JSON.stringify(JSON.parse(cert.subject), null, 2)}
+                                  {(() => {
+                                    try {
+                                      return JSON.stringify(JSON.parse(cert.subject), null, 2);
+                                    } catch {
+                                      return cert.subject;
+                                    }
+                                  })()}
                                 </pre>
                               </div>
                             )}
@@ -352,7 +387,13 @@ export default function Certificates() {
                               <div className="md:col-span-2 lg:col-span-3">
                                 <h4 className="text-sm font-medium text-gray-700 mb-2">颁发者详情</h4>
                                 <pre className="bg-gray-100 p-3 rounded text-xs overflow-x-auto">
-                                  {JSON.stringify(JSON.parse(cert.issuer), null, 2)}
+                                  {(() => {
+                                    try {
+                                      return JSON.stringify(JSON.parse(cert.issuer), null, 2);
+                                    } catch {
+                                      return cert.issuer;
+                                    }
+                                  })()}
                                 </pre>
                               </div>
                             )}
