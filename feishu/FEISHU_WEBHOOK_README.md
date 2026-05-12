@@ -87,7 +87,7 @@ curl http://localhost:18080/test
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| `FEISHU_WEBHOOK_URL` | 飞书 Webhook URL | `https://open.feishu.cn/open-apis/bot/v2/hook/REDACTED_WEBHOOK_ID` |
+| `FEISHU_WEBHOOK_URL` | 飞书 Webhook URL | `https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_WEBHOOK_URL` |
 | `SEND_RESOLVED` | 是否发送恢复通知 | `true` |
 | `DEBUG` | 调试模式 | `false` |
 

@@ -42,7 +42,7 @@ start_server() {
     PID=$!
     echo $PID > "$PID_FILE"
     echo "✓ 服务器已启动 (PID: $PID)"
-    echo "  访问地址: https://ssl-test.local:8443"
+    echo "  访问地址: https://ssl-test.local:48443"
     echo "  PID文件: $PID_FILE"
 }
 
@@ -87,7 +87,7 @@ status_server() {
         PID=$(cat "$PID_FILE")
         if kill -0 "$PID" 2>/dev/null; then
             echo "✓ 服务器运行中 (PID: $PID)"
-            echo "  访问地址: https://ssl-test.local:8443"
+            echo "  访问地址: https://ssl-test.local:48443"
         else
             echo "✗ PID文件存在但进程已停止"
             rm -f "$PID_FILE"
@@ -96,7 +96,7 @@ status_server() {
         PIDS=$(pgrep -f "test_server.py")
         if [ -n "$PIDS" ]; then
             echo "✓ 服务器运行中 (PID: $PIDS)"
-            echo "  访问地址: https://ssl-test.local:8443"
+            echo "  访问地址: https://ssl-test.local:48443"
         else
             echo "✗ 服务器未运行"
         fi

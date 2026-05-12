@@ -82,7 +82,7 @@ services:
       dockerfile: Dockerfile.feishu-webhook
     container_name: ssl-feishu-webhook
     environment:
-      - FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/REDACTED_WEBHOOK_ID
+      - FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_WEBHOOK_URL
       - SEND_RESOLVED=true
     ports:
       - "18080:8080"

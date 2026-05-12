@@ -65,9 +65,10 @@ receivers:
 
 **请确认飞书 Webhook URL 是否正确：**
 
-当前配置中使用的 Webhook URL：
-```
-https://open.feishu.cn/open-apis/bot/v2/hook/REDACTED_WEBHOOK_ID
+在 `docker-compose.yml` 中配置您的飞书 Webhook URL：
+```yaml
+environment:
+  - FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_WEBHOOK_URL
 ```
 
 **如果需要更换 Webhook URL：**
@@ -162,8 +163,8 @@ pip list | grep -E "flask|requests"
 
 1. 确认飞书 Webhook URL 有效
    ```bash
-   # 直接测试飞书 Webhook
-   curl -X POST 'https://open.feishu.cn/open-apis/bot/v2/hook/REDACTED_WEBHOOK_ID' \
+   # 直接测试飞书 Webhook（请替换 YOUR_WEBHOOK_URL）
+   curl -X POST 'https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_WEBHOOK_URL' \
      -H 'Content-Type: application/json' \
      -d '{"msg_type":"text","content":{"text":"测试"}}'
    ```
