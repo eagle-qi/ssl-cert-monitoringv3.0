@@ -78,7 +78,7 @@ services:
 
   feishu-webhook:
     build:
-      context: .
+      context: ./feishu
       dockerfile: Dockerfile.feishu-webhook
     container_name: ssl-feishu-webhook
     environment:
