@@ -245,7 +245,7 @@ app.get('/api/targets', (req, res) => {
 // 添加新目标
 app.post('/api/targets', (req, res) => {
   try {
-    const { url, service_name, owner, env, enabled = true, check_interval, timeout } = req.body;
+    const { url, service_name, owner, owner_email, env, enabled = true, check_interval, timeout } = req.body;
     
     if (!url) {
       return res.status(400).json({ success: false, message: 'URL不能为空' });
@@ -266,6 +266,7 @@ app.post('/api/targets', (req, res) => {
       url,
       service_name: service_name || url,
       owner: owner || '未分配',
+      owner_email: owner_email || '',
       env: env || 'production',
       enabled,
       check_interval: check_interval || config.settings.default_check_interval || 180,

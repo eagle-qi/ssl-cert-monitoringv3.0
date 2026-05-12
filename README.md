@@ -43,6 +43,8 @@ docker-compose up -d
 | Alertmanager | http://localhost:9093 | - |
 | Blackbox Exporter | http://localhost:9115 | - |
 | SSL Exporter | http://localhost:9116 | - |
+| Feishu Webhook | http://localhost:18080 | - |
+| Email Webhook | http://localhost:18081 | - |
 
 ### 3. 查看监控面板
 
@@ -76,6 +78,9 @@ ssl-cert-monitoring/
 │   ├── test_feishu_alert.sh    # 飞书告警排查脚本
 │   ├── fix_feishu_alert.sh     # 飞书告警修复脚本
 │   └── FEISHU_SETUP.md         # 飞书配置详细指南
+├── email/                      # 邮件告警相关
+│   ├── webhook_email.py        # 邮件告警服务
+│   └── Dockerfile              # 邮件服务镜像构建
 ├── grafana/                    # Grafana 配置
 │   └── provisioning/           # 自动配置
 ├── prometheus/                 # Prometheus 配置
@@ -159,6 +164,7 @@ ssl-cert-monitoring/
 | type | 目标类型：`domain`（域名）或 `ip`（IP 地址） |
 | url | 完整的 HTTPS URL（含端口） |
 | owner | 负责人/团队 |
+| owner_email | 负责人邮箱，用于接收告警邮件 |
 | env | 环境：`production`（生产）或 `test`（测试） |
 | service_name | 服务名称 |
 | skip_verify | 是否跳过证书验证（内网证书通常设为 true） |
@@ -195,14 +201,6 @@ feishu-webhook:
 编辑 `alertmanager/alertmanager.yml`：
 
 ```yaml
-global:
-  # 邮件配置
-  smtp_smarthost: 'smtp.qq.com:587'
-  smtp_from: 'your_email@qq.com'
-  smtp_auth_username: 'your_email@qq.com'
-  smtp_auth_password: 'your_auth_password'
-  smtp_require_tls: true
-
 route:
   group_by: ['alertname', 'severity', 'env']
   group_wait: 10s
@@ -211,19 +209,42 @@ route:
   receiver: 'all-notifications'
 
 receivers:
-  # 所有告警 - 同时发送邮件和飞书
+  # 所有告警 - 同时发送飞书和邮件
   - name: 'all-notifications'
     # 飞书通知
     webhook_configs:
       - url: 'http://feishu-webhook:8080/webhook'
         send_resolved: true
-    # 邮件通知
-    email_configs:
-      - to: 'recipient@example.com'
-        headers:
-          subject: 'SSL证书告警'
+    # 邮件服务（根据负责人邮箱发送）
+    webhook_configs:
+      - url: 'http://email-webhook:8080/webhook'
         send_resolved: true
 ```
+
+#### 3.2 邮件告警配置
+
+邮件服务通过 `docker-compose.yml` 配置 SMTP：
+
+```yaml
+email-webhook:
+  environment:
+    - SMTP_HOST=smtp.example.com
+    - SMTP_PORT=587
+    - SMTP_USER=your_email@example.com
+    - SMTP_PASSWORD=your_smtp_password
+    - SMTP_FROM=your_email@example.com
+    - SMTP_USE_TLS=true
+```
+
+#### 3.3 配置负责人邮箱
+
+在目标管理中添加负责人邮箱：
+
+| 字段 | 说明 |
+|------|------|
+| owner_email | 负责人邮箱，用于接收告警邮件 |
+
+邮件服务会根据告警目标的 `owner_email` 自动发送邮件。
 
 #### 3.2 飞书 Webhook 服务
 
@@ -327,6 +348,7 @@ docker exec ssl-alertmanager amtool --alertmanager.url=http://localhost:9093 ale
 | Blackbox Exporter | ssl-blackbox | 9115 | SSL 探测 |
 | SSL Exporter | ssl-custom-exporter | 9116 | 详细证书信息 |
 | Feishu Webhook | ssl-feishu-webhook | 18080 | 飞书通知服务 |
+| Email Webhook | ssl-email-webhook | 18081 | 邮件通知服务 |
 
 ## 数据持久化
 

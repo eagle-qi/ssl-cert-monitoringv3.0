@@ -22,6 +22,7 @@ interface Target {
   url: string;
   service_name: string;
   owner: string;
+  owner_email?: string;
   env: string;
   enabled: boolean;
   check_interval?: number;
@@ -40,6 +41,7 @@ export default function Targets() {
     url: '',
     service_name: '',
     owner: '',
+    owner_email: '',
     env: 'production',
     enabled: true,
     check_interval: 180,
@@ -103,6 +105,7 @@ export default function Targets() {
       url: '',
       service_name: '',
       owner: '',
+      owner_email: '',
       env: 'production',
       enabled: true,
       check_interval: 180,
@@ -117,6 +120,7 @@ export default function Targets() {
       url: target.url,
       service_name: target.service_name,
       owner: target.owner,
+      owner_email: target.owner_email || '',
       env: target.env,
       enabled: target.enabled,
       check_interval: target.check_interval || 180,
@@ -543,6 +547,21 @@ export default function Targets() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    负责人邮箱
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.owner_email}
+                    onChange={(e) => setFormData({ ...formData, owner_email: e.target.value })}
+                    placeholder="admin@example.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     环境

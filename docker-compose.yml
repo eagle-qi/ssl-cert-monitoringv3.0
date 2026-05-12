@@ -73,6 +73,33 @@ services:
     restart: unless-stopped
     depends_on:
       - feishu-webhook
+      - email-webhook
+    networks:
+      - default
+
+  email-webhook:
+    build:
+      context: ./email
+      dockerfile: Dockerfile
+    container_name: ssl-email-webhook
+    volumes:
+      - ./data:/app/data:ro  # 只读挂载配置目录
+    environment:
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_USER=your_email@example.com
+      - SMTP_PASSWORD=your_smtp_password
+      - SMTP_FROM=your_email@example.com
+      - SMTP_USE_TLS=true
+      - TARGETS_CONFIG_PATH=/app/data/ssl_targets.json
+    ports:
+      - "18081:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - default
 
