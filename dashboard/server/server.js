@@ -1,5 +1,6 @@
 import express from 'express';
 import svgCaptcha from 'svg-captcha';
+import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -49,6 +50,12 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+// 配置 multer 用于文件上传
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 限制5MB
+});
 
 // ==================== 验证码 API ====================
 
@@ -251,12 +258,40 @@ app.post('/api/targets', (req, res) => {
       return res.status(400).json({ success: false, message: 'URL不能为空' });
     }
 
+    if (!service_name) {
+      return res.status(400).json({ success: false, message: '服务名称不能为空' });
+    }
+
+    if (!owner) {
+      return res.status(400).json({ success: false, message: '负责人不能为空' });
+    }
+
+    if (!owner_email) {
+      return res.status(400).json({ success: false, message: '负责人邮箱不能为空' });
+    }
+
+    if (!env) {
+      return res.status(400).json({ success: false, message: '环境不能为空' });
+    }
+
     // 验证URL格式
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return res.status(400).json({ success: false, message: 'URL必须以 http:// 或 https:// 开头' });
     }
 
+    // 验证邮箱格式
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(owner_email)) {
+      return res.status(400).json({ success: false, message: '请输入正确的邮箱格式' });
+    }
+
     const config = readConfig();
+    
+    // 检查URL是否已存在
+    const exists = config.targets.some(t => t.url === url);
+    if (exists) {
+      return res.status(400).json({ success: false, message: '该URL已存在' });
+    }
     
     // 生成新ID
     const maxId = config.targets.reduce((max, t) => Math.max(max, parseInt(t.id || 0)), 0);
@@ -264,10 +299,10 @@ app.post('/api/targets', (req, res) => {
     const newTarget = {
       id: String(maxId + 1),
       url,
-      service_name: service_name || url,
-      owner: owner || '未分配',
-      owner_email: owner_email || '',
-      env: env || 'production',
+      service_name,
+      owner,
+      owner_email,
+      env,
       enabled,
       check_interval: check_interval || config.settings.default_check_interval || 180,
       timeout: timeout || config.settings.default_timeout || 30
@@ -298,11 +333,42 @@ app.put('/api/targets/:id', (req, res) => {
       return res.status(404).json({ success: false, message: '目标不存在' });
     }
 
-    // 验证URL格式（如果更新了URL）
-    if (updates.url) {
-      if (!updates.url.startsWith('http://') && !updates.url.startsWith('https://')) {
-        return res.status(400).json({ success: false, message: 'URL必须以 http:// 或 https:// 开头' });
-      }
+    // 验证必填字段
+    if (!updates.url) {
+      return res.status(400).json({ success: false, message: 'URL不能为空' });
+    }
+
+    if (!updates.service_name) {
+      return res.status(400).json({ success: false, message: '服务名称不能为空' });
+    }
+
+    if (!updates.owner) {
+      return res.status(400).json({ success: false, message: '负责人不能为空' });
+    }
+
+    if (!updates.owner_email) {
+      return res.status(400).json({ success: false, message: '负责人邮箱不能为空' });
+    }
+
+    if (!updates.env) {
+      return res.status(400).json({ success: false, message: '环境不能为空' });
+    }
+
+    // 验证URL格式
+    if (!updates.url.startsWith('http://') && !updates.url.startsWith('https://')) {
+      return res.status(400).json({ success: false, message: 'URL必须以 http:// 或 https:// 开头' });
+    }
+
+    // 验证邮箱格式
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(updates.owner_email)) {
+      return res.status(400).json({ success: false, message: '请输入正确的邮箱格式' });
+    }
+
+    // 检查URL是否被其他目标使用
+    const urlExists = config.targets.some(t => t.url === updates.url && t.id !== id);
+    if (urlExists) {
+      return res.status(400).json({ success: false, message: '该URL已被其他目标使用' });
     }
 
     // 更新目标
@@ -406,6 +472,142 @@ app.post('/api/targets/reload', (req, res) => {
   } catch (error) {
     console.error('Reload error:', error);
     res.status(500).json({ success: false, message: '重新加载配置失败' });
+  }
+});
+
+// CSV解析函数
+function parseCSV(csvContent) {
+  const lines = csvContent.split(/\r?\n/).filter(line => line.trim());
+  if (lines.length < 2) {
+    return [];
+  }
+
+  const headers = parseCSVLine(lines[0]);
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    if (values.length === headers.length) {
+      const row = {};
+      headers.forEach((header, idx) => {
+        row[header.trim()] = values[idx] ? values[idx].trim() : '';
+      });
+      rows.push(row);
+    }
+  }
+
+  return rows;
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current);
+
+  return result;
+}
+
+// 批量导入目标
+app.post('/api/targets/import', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: '请上传CSV文件' });
+    }
+
+    const csvContent = req.file.buffer.toString('utf-8');
+    const targets = parseCSV(csvContent);
+
+    if (targets.length === 0) {
+      return res.status(400).json({ success: false, message: 'CSV文件为空或格式不正确' });
+    }
+
+    const config = readConfig();
+    const errors = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    // 获取当前最大ID
+    const maxId = config.targets.reduce((max, t) => Math.max(max, parseInt(t.id || 0)), 0);
+    let currentId = maxId;
+
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i];
+      const rowNum = i + 2; // CSV行号（从2开始，第1行是表头）
+
+      // 验证必填字段
+      if (!target.url) {
+        errors.push(`第${rowNum}行: URL不能为空`);
+        failedCount++;
+        continue;
+      }
+
+      // 验证URL格式
+      if (!target.url.startsWith('http://') && !target.url.startsWith('https://')) {
+        errors.push(`第${rowNum}行: URL必须以 http:// 或 https:// 开头`);
+        failedCount++;
+        continue;
+      }
+
+      // 检查URL是否已存在
+      const exists = config.targets.some(t => t.url === target.url);
+      if (exists) {
+        errors.push(`第${rowNum}行: URL "${target.url}" 已存在，跳过`);
+        failedCount++;
+        continue;
+      }
+
+      currentId++;
+      const newTarget = {
+        id: String(currentId),
+        url: target.url,
+        service_name: target.service_name || target.url,
+        owner: target.owner || '未分配',
+        owner_email: target.owner_email || '',
+        env: target.env || 'production',
+        enabled: target.enabled === 'true' || target.enabled === true || target.enabled === '1' || target.enabled === 1,
+        check_interval: parseInt(target.check_interval) || config.settings.default_check_interval || 180,
+        timeout: parseInt(target.timeout) || config.settings.default_timeout || 30
+      };
+
+      config.targets.push(newTarget);
+      successCount++;
+    }
+
+    if (writeConfig(config)) {
+      res.json({
+        success: true,
+        message: `导入完成`,
+        data: {
+          success: successCount,
+          failed: failedCount,
+          errors: errors
+        }
+      });
+    } else {
+      res.status(500).json({ success: false, message: '保存配置失败' });
+    }
+  } catch (error) {
+    console.error('Import error:', error);
+    res.status(500).json({ success: false, message: '导入失败: ' + error.message });
   }
 });
 

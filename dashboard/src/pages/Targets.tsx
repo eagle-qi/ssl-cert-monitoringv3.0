@@ -14,7 +14,10 @@ import {
   Globe,
   AlertCircle,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  Upload,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 
 interface Target {
@@ -50,6 +53,11 @@ export default function Targets() {
   const [saving, setSaving] = useState(false);
   const [reloadLoading, setReloadLoading] = useState(false);
   const [reloadMessage, setReloadMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{success: number, failed: number, errors: string[]} | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
 
   const API_BASE = '/api/targets';
 
@@ -132,13 +140,41 @@ export default function Targets() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.url) {
-      alert('URL不能为空');
+    // 验证必填字段
+    if (!formData.url.trim()) {
+      alert('监控地址不能为空');
+      return;
+    }
+
+    if (!formData.service_name.trim()) {
+      alert('服务名称不能为空');
+      return;
+    }
+
+    if (!formData.owner.trim()) {
+      alert('负责人不能为空');
+      return;
+    }
+
+    if (!formData.owner_email.trim()) {
+      alert('负责人邮箱不能为空');
+      return;
+    }
+
+    if (!formData.env.trim()) {
+      alert('环境不能为空');
       return;
     }
 
     if (!formData.url.startsWith('http://') && !formData.url.startsWith('https://')) {
       alert('URL必须以 http:// 或 https:// 开头');
+      return;
+    }
+
+    // 验证邮箱格式
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.owner_email)) {
+      alert('请输入正确的邮箱格式');
       return;
     }
 
@@ -219,6 +255,89 @@ export default function Targets() {
     }
   };
 
+  // 下载批量导入模板
+  const handleDownloadTemplate = () => {
+    const templateHeaders = ['url', 'service_name', 'owner', 'owner_email', 'env', 'enabled', 'check_interval', 'timeout'];
+    const templateData = [
+      ['https://www.example.com:443', '示例网站', '运维团队', 'admin@example.com', 'production', 'true', '180', '30'],
+      ['https://www.test.com:443', '测试网站', '开发团队', 'dev@example.com', 'test', 'true', '180', '30'],
+    ];
+
+    const csvContent = [
+      templateHeaders.join(','),
+      ...templateData.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `ssl_targets_template_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 处理文件选择
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.name.endsWith('.csv')) {
+        alert('请上传 CSV 格式的文件');
+        return;
+      }
+      setImportFile(file);
+      setImportResult(null);
+    }
+  };
+
+  // 批量导入
+  const handleImport = async () => {
+    if (!importFile) {
+      alert('请选择要导入的文件');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      setImportResult(null);
+
+      const formData = new FormData();
+      formData.append('file', importFile);
+
+      const response = await fetch(`${API_BASE}/import`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setImportResult({
+          success: result.data?.success || 0,
+          failed: result.data?.failed || 0,
+          errors: result.data?.errors || []
+        });
+        await fetchTargets();
+        await handleReload();
+      } else {
+        alert(result.message || '导入失败');
+      }
+    } catch (err) {
+      alert('导入失败，请重试');
+      console.error(err);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // 重置导入状态
+  const resetImport = () => {
+    setShowImportModal(false);
+    setImportFile(null);
+    setImportResult(null);
+  };
+
   const filteredTargets = targets.filter(target => {
     const matchesSearch = 
       target.url.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -258,6 +377,13 @@ export default function Targets() {
           >
             <RefreshCw className={`h-4 w-4 ${reloadLoading ? 'animate-spin' : ''}`} />
             <span>重载配置</span>
+          </button>
+          <button 
+            onClick={() => setShowImportModal(true)}
+            className="btn-secondary flex items-center space-x-2"
+          >
+            <Upload className="h-4 w-4" />
+            <span>批量导入</span>
           </button>
           <button onClick={openAddModal} className="btn-primary flex items-center space-x-2">
             <Plus className="h-4 w-4" />
@@ -522,7 +648,7 @@ export default function Targets() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  服务名称
+                  服务名称 <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -530,13 +656,14 @@ export default function Targets() {
                   onChange={(e) => setFormData({ ...formData, service_name: e.target.value })}
                   placeholder="示例网站"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  required
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    负责人
+                    负责人 <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -544,12 +671,13 @@ export default function Targets() {
                     onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
                     placeholder="运维团队"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    required
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    负责人邮箱
+                    负责人邮箱 <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="email"
@@ -557,6 +685,7 @@ export default function Targets() {
                     onChange={(e) => setFormData({ ...formData, owner_email: e.target.value })}
                     placeholder="admin@example.com"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    required
                   />
                 </div>
               </div>
@@ -564,12 +693,13 @@ export default function Targets() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    环境
+                    环境 <span className="text-red-500">*</span>
                   </label>
                   <select
                     value={formData.env}
                     onChange={(e) => setFormData({ ...formData, env: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    required
                   >
                     <option value="production">生产环境</option>
                     <option value="test">测试环境</option>
@@ -638,6 +768,133 @@ export default function Targets() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-xl mx-4">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">批量导入目标</h2>
+              <button
+                onClick={resetImport}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* 下载模板 */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <FileSpreadsheet className="h-8 w-8 text-blue-600" />
+                    <div>
+                      <h3 className="font-medium text-gray-900">批量导入模板</h3>
+                      <p className="text-sm text-gray-500">下载 CSV 模板，填写后上传</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleDownloadTemplate}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>下载模板</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 上传文件 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  上传已填好的 CSV 文件 <span className="text-red-500">*</span>
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-500 transition-colors">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="csv-upload"
+                  />
+                  <label htmlFor="csv-upload" className="cursor-pointer">
+                    <Upload className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+                    {importFile ? (
+                      <div>
+                        <p className="text-primary-600 font-medium">{importFile.name}</p>
+                        <p className="text-sm text-gray-500">点击更换文件</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-gray-600">点击选择 CSV 文件</p>
+                        <p className="text-sm text-gray-400">或拖拽文件到此处</p>
+                      </div>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {/* 导入结果 */}
+              {importResult && (
+                <div className={`rounded-lg p-4 ${importResult.failed === 0 ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+                  <div className="flex items-center space-x-2 mb-2">
+                    {importResult.failed === 0 ? (
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                    ) : (
+                      <AlertCircle className="h-5 w-5 text-yellow-600" />
+                    )}
+                    <span className={`font-medium ${importResult.failed === 0 ? 'text-green-800' : 'text-yellow-800'}`}>
+                      导入完成
+                    </span>
+                  </div>
+                  <div className="text-sm space-y-1">
+                    <p className="text-green-700">成功导入: {importResult.success} 条</p>
+                    {importResult.failed > 0 && (
+                      <p className="text-yellow-700">导入失败: {importResult.failed} 条</p>
+                    )}
+                    {importResult.errors.length > 0 && (
+                      <div className="mt-2 max-h-32 overflow-y-auto">
+                        <p className="font-medium text-gray-700">错误详情:</p>
+                        <ul className="list-disc list-inside text-gray-600 text-xs">
+                          {importResult.errors.map((error, idx) => (
+                            <li key={idx}>{error}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 按钮 */}
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={resetImport}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  关闭
+                </button>
+                <button
+                  onClick={handleImport}
+                  disabled={!importFile || importing}
+                  className="px-4 py-2 bg-primary-600 text-white hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2"
+                >
+                  {importing ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>导入中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4" />
+                      <span>开始导入</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
