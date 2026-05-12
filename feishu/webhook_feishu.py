@@ -12,8 +12,12 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# 飞书 Webhook URL（从环境变量获取，或使用默认配置）
-FEISHU_WEBHOOK_URL = os.getenv('FEISHU_WEBHOOK_URL', 'https://open.feishu.cn/open-apis/bot/v2/hook/REDACTED_WEBHOOK_ID')
+# 飞书 Webhook URL（从环境变量获取）
+FEISHU_WEBHOOK_URL = os.getenv('FEISHU_WEBHOOK_URL', '')
+
+# 检查是否配置了 Webhook URL
+if not FEISHU_WEBHOOK_URL:
+    raise ValueError("错误: 未配置 FEISHU_WEBHOOK_URL 环境变量！请在 docker-compose.yml 中设置。")
 
 # 是否发送恢复通知
 SEND_RESOLVED = os.getenv('SEND_RESOLVED', 'true').lower() == 'true'
