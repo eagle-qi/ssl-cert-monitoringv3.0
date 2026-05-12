@@ -31,9 +31,6 @@ cd ssl-cert-monitoring
 
 # 使用 docker-compose 启动
 docker-compose up -d
-
-# 或使用启动脚本（自动修复 Dashboard 配置）
-./start.sh
 ```
 
 ### 2. 访问服务
@@ -87,8 +84,7 @@ ssl-cert-monitoring/
 │   └── ssl_targets.json        # 监控目标列表
 ├── data/                       # 共享数据目录
 │   └── ssl_targets.json        # 统一目标配置
-├── docker-compose.yml          # Docker Compose 配置
-├── start.sh                    # 启动脚本
+├── docker-compose.yml           # Docker Compose 配置
 ├── LICENSE
 └── README.md
 ```
