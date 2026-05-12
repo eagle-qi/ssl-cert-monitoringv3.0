@@ -16,6 +16,8 @@ services:
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
     restart: unless-stopped
+    networks:
+      - default
 
   grafana:
     image: grafana/grafana:latest
@@ -69,6 +71,29 @@ services:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
     restart: unless-stopped
+    depends_on:
+      - feishu-webhook
+    networks:
+      - default
+
+  feishu-webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile.feishu-webhook
+    container_name: ssl-feishu-webhook
+    environment:
+      - FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/REDACTED_WEBHOOK_ID
+      - SEND_RESOLVED=true
+    ports:
+      - "18080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - default
 
   dashboard:
     build:
@@ -91,6 +116,11 @@ services:
     environment:
       - TARGETS_CONFIG_PATH=/app/data/ssl_targets.json  # 统一配置文件路径
     restart: unless-stopped
+
+networks:
+  default:
+    name: ssl-monitoring-network
+    driver: bridge
 
 volumes:
   prometheus-data:

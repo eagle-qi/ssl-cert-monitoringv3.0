@@ -27,7 +27,7 @@ groups:
           alert_type: ssl_cert
         annotations:
           summary: "SSL证书即将过期 - {{ $labels.hostname }}"
-          description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书将在 {{ $value | humanizeDuration }} 后过期. 负责人: {{ $labels.owner }}"
+          description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书将在 {{ $value | printf \"%.1f\" }} 天后过期. 负责人: {{ $labels.owner }}"
           owner: "{{ $labels.owner }}"
           service: "{{ $labels.service_name }}"
           env: "{{ $labels.env }}"
@@ -41,7 +41,7 @@ groups:
           alert_type: ssl_cert
         annotations:
           summary: "SSL证书严重警告 - {{ $labels.hostname }}"
-          description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书将在 {{ $value | humanizeDuration }} 后过期! 请立即处理! 负责人: {{ $labels.owner }}"
+          description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书将在 {{ $value | printf \"%.1f\" }} 天后过期! 请立即处理! 负责人: {{ $labels.owner }}"
           owner: "{{ $labels.owner }}"
           service: "{{ $labels.service_name }}"
           env: "{{ $labels.env }}"
