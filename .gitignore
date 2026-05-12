@@ -36,3 +36,8 @@ Thumbs.db
 # Temporary
 *.tmp
 .cache/
+
+# Environment and secrets
+.env
+.env.local
+.env.production

@@ -2,6 +2,8 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: ssl-prometheus
+    env_file:
+      - .env
     volumes:
       - ./prometheus:/etc/prometheus
       - prometheus-data:/prometheus
@@ -22,6 +24,8 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: ssl-grafana
+    env_file:
+      - .env
     ports:
       - "43000:3000"
     volumes:
@@ -30,8 +34,8 @@ services:
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./grafana/provisioning/alerting:/etc/grafana/provisioning/alerting
     environment:
-      - GF_SECURITY_ADMIN_USER=gfadmin
-      - GF_SECURITY_ADMIN_PASSWORD=REDACTED_ADMIN_PASSWORD
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_ALERTING_ENABLED=true
       - GF_ALERTING_ALERTMANAGER_FORCE_WORKER=true
@@ -64,12 +68,16 @@ services:
   alertmanager:
     image: prom/alertmanager:latest
     container_name: ssl-alertmanager
+    env_file:
+      - .env
     volumes:
       - ./alertmanager:/etc/alertmanager
+      - ./alertmanager/entrypoint.sh:/entrypoint.sh
       - alertmanager-data:/alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
+    entrypoint: /bin/sh /entrypoint.sh
     restart: unless-stopped
     depends_on:
       - feishu-webhook
@@ -82,15 +90,17 @@ services:
       context: ./email
       dockerfile: Dockerfile
     container_name: ssl-email-webhook
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data:ro  # 只读挂载配置目录
     environment:
-      - SMTP_HOST=smtp.example.com
-      - SMTP_PORT=587
-      - SMTP_USER=your_email@example.com
-      - SMTP_PASSWORD=your_smtp_password
-      - SMTP_FROM=your_email@example.com
-      - SMTP_USE_TLS=true
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM=${SMTP_FROM}
+      - SMTP_USE_TLS=${SMTP_USE_TLS}
       - TARGETS_CONFIG_PATH=/app/data/ssl_targets.json
     ports:
       - "18081:8080"
@@ -108,9 +118,11 @@ services:
       context: ./feishu
       dockerfile: Dockerfile.feishu-webhook
     container_name: ssl-feishu-webhook
+    env_file:
+      - .env
     environment:
-      - FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_WEBHOOK_URL
-      - SEND_RESOLVED=true
+      - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL}
+      - SEND_RESOLVED=${FEISHU_SEND_RESOLVED}
     ports:
       - "18080:8080"
     restart: unless-stopped
@@ -138,10 +150,14 @@ services:
       context: ./dashboard/server
       dockerfile: Dockerfile
     container_name: ssl-captcha-service
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data  # 读写挂载配置目录
     environment:
       - TARGETS_CONFIG_PATH=/app/data/ssl_targets.json  # 统一配置文件路径
+      - DASHBOARD_ADMIN_USER=${DASHBOARD_ADMIN_USER}
+      - DASHBOARD_ADMIN_PASSWORD=${DASHBOARD_ADMIN_PASSWORD}
     restart: unless-stopped
 
 networks:

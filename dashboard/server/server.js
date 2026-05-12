@@ -113,8 +113,16 @@ app.post('/api/captcha/verify', (req, res) => {
   return res.json({ success: false, message: '验证码错误' });
 });
 
-// 读取管理员配置
+// 读取管理员配置（优先从环境变量读取，其次从配置文件读取）
 function readAdminConfig() {
+  // 优先使用环境变量
+  const envUsername = process.env.DASHBOARD_ADMIN_USER;
+  const envPassword = process.env.DASHBOARD_ADMIN_PASSWORD;
+  
+  if (envUsername && envPassword) {
+    return { username: envUsername, password: envPassword };
+  }
+  
   try {
     const config = readConfig();
     return config.admin || { username: 'admin', password: 'admin123' };

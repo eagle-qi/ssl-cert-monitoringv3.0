@@ -22,23 +22,36 @@
 
 ## 快速开始
 
-### 1. 启动服务
+### 1. 配置环境变量
+
+复制 `.env.example` 为 `.env` 并配置您的敏感信息：
+
+```bash
+cp .env.example .env
+# 编辑 .env 文件，填入实际配置
+```
+
+### 2. 启动服务
 
 ```bash
 # 克隆仓库
 git clone https://github.com/eagle-qi/ssl-cert-monitoring.git
 cd ssl-cert-monitoring
 
+# 复制并配置环境变量
+cp .env.example .env
+# 编辑 .env 文件
+
 # 使用 docker-compose 启动
 docker-compose up -d
 ```
 
-### 2. 访问服务
+### 3. 访问服务
 
 | 服务 | 地址 | 账号密码 |
 |------|------|----------|
-| Web Dashboard | http://localhost:48080 | gsadmin / REDACTED_ADMIN_PASSWORD |
-| Grafana | http://localhost:43000 | gfadmin / REDACTED_ADMIN_PASSWORD |
+| Web Dashboard | http://localhost:48080 | 见 `.env` 文件 |
+| Grafana | http://localhost:43000 | 见 `.env` 文件 |
 | Prometheus | http://localhost:49090 | - |
 | Alertmanager | http://localhost:9093 | - |
 | Blackbox Exporter | http://localhost:9115 | - |
@@ -63,7 +76,9 @@ docker-compose up -d
 ```
 ssl-cert-monitoring/
 ├── alertmanager/              # Alertmanager 配置
-│   └── alertmanager.yml       # 告警接收者配置（飞书+邮件）
+│   ├── alertmanager.yml       # 告警接收者配置（飞书+邮件）
+│   ├── alertmanager.yml.template  # 配置模板
+│   └── entrypoint.sh          # 配置生成脚本
 ├── dashboard/                  # Web Dashboard (React + Vite)
 │   ├── src/                    # React 源代码
 │   ├── server/                 # 验证码服务 (Node.js)
@@ -90,6 +105,8 @@ ssl-cert-monitoring/
 ├── data/                       # 共享数据目录
 │   └── ssl_targets.json        # 统一目标配置
 ├── docker-compose.yml           # Docker Compose 配置
+├── .env.example                 # 环境变量示例
+├── .gitignore                  # Git 忽略文件
 ├── LICENSE
 └── README.md
 ```
@@ -131,7 +148,32 @@ ssl-cert-monitoring/
 
 ## 配置说明
 
-### 1. 添加监控目标
+### 1. 环境变量配置 (.env)
+
+所有敏感配置信息通过 `.env` 文件管理。复制 `.env.example` 为 `.env` 并配置：
+
+```bash
+cp .env.example .env
+```
+
+**配置项说明：**
+
+| 变量名 | 说明 | 示例 |
+|--------|------|------|
+| `GRAFANA_ADMIN_USER` | Grafana 用户名 | `gfadmin` |
+| `GRAFANA_ADMIN_PASSWORD` | Grafana 密码 | `your_password` |
+| `DASHBOARD_ADMIN_USER` | Web Dashboard 用户名 | `gsadmin` |
+| `DASHBOARD_ADMIN_PASSWORD` | Web Dashboard 密码 | `your_password` |
+| `FEISHU_WEBHOOK_URL` | 飞书 Webhook 地址 | `https://open.feishu.cn/...` |
+| `FEISHU_SEND_RESOLVED` | 是否发送恢复通知 | `true` |
+| `SMTP_HOST` | SMTP 服务器地址 | `smtp.example.com` |
+| `SMTP_PORT` | SMTP 端口 | `587` |
+| `SMTP_USER` | SMTP 用户名 | `your_email@example.com` |
+| `SMTP_PASSWORD` | SMTP 密码 | `your_password` |
+| `SMTP_FROM` | 发件人邮箱 | `your_email@example.com` |
+| `SMTP_USE_TLS` | 是否使用 TLS | `true` |
+
+### 2. 添加监控目标
 
 编辑 `data/ssl_targets.json` 添加要监控的域名或 IP：
 
@@ -169,32 +211,26 @@ ssl-cert-monitoring/
 | service_name | 服务名称 |
 | skip_verify | 是否跳过证书验证（内网证书通常设为 true） |
 
-### 2. 飞书 Webhook 配置
+### 3. 飞书 Webhook 配置
 
 系统使用独立的飞书 Webhook 服务（`feishu-webhook`）将 AlertManager 告警转换为飞书消息格式。
 
-#### 2.1 配置飞书 Webhook URL
+#### 3.1 配置飞书 Webhook URL
 
-编辑 `docker-compose.yml` 中的 `feishu-webhook` 服务环境变量：
+飞书 Webhook URL 在 `.env` 文件中配置：
 
-```yaml
-feishu-webhook:
-  build:
-    context: ./feishu
-    dockerfile: Dockerfile.feishu-webhook
-  environment:
-    - FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/你的飞书Webhook地址
-    - SEND_RESOLVED=true
+```
+FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/你的飞书Webhook地址
 ```
 
-#### 2.2 创建飞书群机器人
+#### 3.2 创建飞书群机器人
 
 1. 打开飞书 → 进入目标群 → 群设置 → 群机器人
 2. 点击 "添加机器人" → "自定义机器人"
 3. 设置机器人名称并复制 Webhook 地址
 4. 将地址配置到 `FEISHU_WEBHOOK_URL` 环境变量
 
-### 3. 告警通知配置
+### 4. 告警通知配置
 
 #### 3.1 Alertmanager 配置
 
@@ -221,22 +257,20 @@ receivers:
         send_resolved: true
 ```
 
-#### 3.2 邮件告警配置
+#### 4.2 邮件告警配置
 
-邮件服务通过 `docker-compose.yml` 配置 SMTP：
+邮件服务通过 `.env` 文件配置 SMTP：
 
-```yaml
-email-webhook:
-  environment:
-    - SMTP_HOST=smtp.example.com
-    - SMTP_PORT=587
-    - SMTP_USER=your_email@example.com
-    - SMTP_PASSWORD=your_smtp_password
-    - SMTP_FROM=your_email@example.com
-    - SMTP_USE_TLS=true
+```
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your_email@example.com
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM=your_email@example.com
+SMTP_USE_TLS=true
 ```
 
-#### 3.3 配置负责人邮箱
+#### 4.3 配置负责人邮箱
 
 在目标管理中添加负责人邮箱：
 
@@ -246,7 +280,7 @@ email-webhook:
 
 邮件服务会根据告警目标的 `owner_email` 自动发送邮件。
 
-#### 3.2 飞书 Webhook 服务
+#### 4.4 飞书 Webhook 服务
 
 `feishu/webhook_feishu.py` 是独立的 Python 服务，负责：
 - 接收 AlertManager 的 webhook 请求
@@ -255,7 +289,7 @@ email-webhook:
 
 服务已集成在 docker-compose.yml 中，自动与 AlertManager 一起启动。
 
-### 4. 告警规则
+### 5. 告警规则
 
 编辑 `prometheus/ssl_cert_alerts.yml`：
 
@@ -271,7 +305,7 @@ email-webhook:
 10.0.0.1 (官网) 证书将在 19.9 天后过期. 负责人: 运维团队
 ```
 
-### 5. 常用命令
+### 6. 常用命令
 
 ```bash
 # 启动所有服务
@@ -298,7 +332,7 @@ docker-compose down
 docker-compose up -d --build
 ```
 
-### 6. 故障排查
+### 7. 故障排查
 
 #### 飞书告警问题排查
 

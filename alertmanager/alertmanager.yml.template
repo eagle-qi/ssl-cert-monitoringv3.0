@@ -1,0 +1,32 @@
+# AlertManager Configuration for SSL Certificate Alerts
+# 此文件为模板，实际配置由 entrypoint.sh 从环境变量生成
+
+global:
+  smtp_smarthost: '${ALERT_SMTP_SMARTHOST}'
+  smtp_from: '${ALERT_SMTP_FROM}'
+  smtp_auth_username: '${ALERT_SMTP_AUTH_USERNAME}'
+  smtp_auth_password: '${ALERT_SMTP_AUTH_PASSWORD}'
+  smtp_require_tls: true
+
+route:
+  group_by: ['alertname', 'severity', 'env']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'all-notifications'
+
+receivers:
+  - name: 'all-notifications'
+    webhook_configs:
+      - url: 'http://feishu-webhook:8080/webhook'
+        send_resolved: true
+    webhook_configs:
+      - url: 'http://email-webhook:8080/webhook'
+        send_resolved: true
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']
