@@ -302,7 +302,7 @@ if __name__ == '__main__':
     print("=" * 60)
     print("AlertManager to Feishu Webhook Converter")
     print("=" * 60)
-    print(f"飞书 Webhook URL: {FEISHU_WEBHOOK_URL}")
+    print(f"飞书 Webhook URL: {'*' * 8}{FEISHU_WEBHOOK_URL[-12:] if FEISHU_WEBHOOK_URL else '(未配置)'}")
     print(f"发送恢复通知: {SEND_RESOLVED}")
     print("=" * 60)
     print("服务地址: http://0.0.0.0:8080")

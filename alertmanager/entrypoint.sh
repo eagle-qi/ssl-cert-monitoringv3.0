@@ -13,6 +13,6 @@ sed -e "s|\${ALERT_SMTP_SMARTHOST}|${ALERT_SMTP_SMARTHOST:-smtp.example.com:587}
     /etc/alertmanager/alertmanager.yml.template > ${CONFIG_FILE}
 
 echo "AlertManager 配置已生成"
-cat ${CONFIG_FILE}
+# 注意：不打印配置内容，避免敏感信息泄露到日志
 
 exec /bin/alertmanager "$@"

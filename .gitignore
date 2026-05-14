@@ -41,6 +41,24 @@ Thumbs.db
 .env
 .env.local
 .env.production
+agent/.env
+
+# Runtime data files (contain real IPs, emails, etc.)
+data/agent_targets.json
+data/ssl_targets.json
+data/server_config.json
+data/metrics.json
+data/prometheus_targets.json
+
+# AlertManager generated config (contains secrets from env vars)
+alertmanager/alertmanager.yml
+
+# SSL/TLS certificates and keys
+*.key
+*.pem
+!test-cert/*.pem
+server/certs/
+agent/certs/
 
 # Agent data (runtime data)
 agent/data/

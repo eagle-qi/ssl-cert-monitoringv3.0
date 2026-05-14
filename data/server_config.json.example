@@ -3,14 +3,14 @@
     {
       "agent_id": "agent-1",
       "host": "10.0.0.1",
-      "port": 8091,
+      "port": 48091,
       "name": "内网机房Agent",
       "enabled": true
     },
     {
       "agent_id": "agent-2",
-      "host": "192.168.2.100",
-      "port": 8091,
+      "host": "192.168.0.100",
+      "port": 48091,
       "name": "机房2 Agent",
       "enabled": true
     }

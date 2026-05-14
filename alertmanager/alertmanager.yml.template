@@ -18,7 +18,7 @@ route:
 receivers:
   - name: 'all-notifications'
     email_configs:
-      - to: 'REDACTED_EMAIL@aspirecn.com,REDACTED_EMAIL@gmail.com'
+      - to: '${ALERT_EMAIL_TO}'
         send_resolved: true
     webhook_configs:
       - url: 'http://feishu-webhook:8080/webhook'
