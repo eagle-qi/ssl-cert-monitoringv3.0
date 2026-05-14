@@ -16,6 +16,7 @@ groups:
           summary: "SSL证书检查失败 - {{ $labels.hostname }}"
           description: "无法获取 {{ $labels.hostname }}:{{ $labels.port }} 的SSL证书. 负责人: {{ $labels.owner }}"
           owner: "{{ $labels.owner }}"
+          owner_email: "{{ $labels.owner_email }}"
           service: "{{ $labels.service_name }}"
 
       # Alert when certificate expires in 30 days (使用自定义exporter指标)
@@ -29,6 +30,7 @@ groups:
           summary: "SSL证书即将过期 - {{ $labels.hostname }}"
           description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书将在 {{ $value | printf \"%.1f\" }} 天后过期. 负责人: {{ $labels.owner }}"
           owner: "{{ $labels.owner }}"
+          owner_email: "{{ $labels.owner_email }}"
           service: "{{ $labels.service_name }}"
           env: "{{ $labels.env }}"
 
@@ -43,6 +45,7 @@ groups:
           summary: "SSL证书严重警告 - {{ $labels.hostname }}"
           description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书将在 {{ $value | printf \"%.1f\" }} 天后过期! 请立即处理! 负责人: {{ $labels.owner }}"
           owner: "{{ $labels.owner }}"
+          owner_email: "{{ $labels.owner_email }}"
           service: "{{ $labels.service_name }}"
           env: "{{ $labels.env }}"
 
@@ -57,6 +60,20 @@ groups:
           summary: "SSL证书已过期 - {{ $labels.hostname }}"
           description: "{{ $labels.hostname }} ({{ $labels.service_name }}) 证书已过期! 请立即更新! 负责人: {{ $labels.owner }}"
           owner: "{{ $labels.owner }}"
+          owner_email: "{{ $labels.owner_email }}"
           service: "{{ $labels.service_name }}"
           env: "{{ $labels.env }}"
+
+      # Alert: Agent 离线 (仅针对有 hostname 标签的 Agent 采集的数据)
+      # 注意: 当前 ssl_agent_health 指标未输出数据，暂禁用此告警
+      # - alert: SSLCertAgentOffline
+      #   expr: absent(ssl_agent_health{source="agent",hostname!=""}) or (ssl_agent_health{source="agent",hostname!=""} == 0)
+      #   for: 5m
+      #   labels:
+      #     severity: warning
+      #     alert_type: ssl_cert_agent
+      #   annotations:
+      #     summary: "SSL证书监控 Agent 离线 - {{ $labels.hostname }}"
+      #     description: "Agent {{ $labels.hostname }} ({{ $labels.ip }}) 已离线或无法访问，请检查 Agent 服务状态"
+      #     owner: "{{ $labels.owner }}"
 

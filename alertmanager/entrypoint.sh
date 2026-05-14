@@ -9,6 +9,7 @@ sed -e "s|\${ALERT_SMTP_SMARTHOST}|${ALERT_SMTP_SMARTHOST:-smtp.example.com:587}
     -e "s|\${ALERT_SMTP_FROM}|${ALERT_SMTP_FROM:-noreply@example.com}|g" \
     -e "s|\${ALERT_SMTP_AUTH_USERNAME}|${ALERT_SMTP_AUTH_USERNAME:-}|g" \
     -e "s|\${ALERT_SMTP_AUTH_PASSWORD}|${ALERT_SMTP_AUTH_PASSWORD:-}|g" \
+    -e "s|\${ALERT_EMAIL_TO}|${ALERT_EMAIL_TO:-}|g" \
     /etc/alertmanager/alertmanager.yml.template > ${CONFIG_FILE}
 
 echo "AlertManager 配置已生成"

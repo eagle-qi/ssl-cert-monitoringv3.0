@@ -1,15 +1,26 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { isAuthenticated } from './utils/auth';
+import { isAuthenticated, isAdmin } from './utils/auth';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Certificates from './pages/Certificates';
 import Alerts from './pages/Alerts';
 import Targets from './pages/Targets';
+import AgentTargets from './pages/AgentTargets';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  if (!isAuthenticated()) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!isAdmin()) {
+    return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
 }
@@ -31,7 +42,8 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="certificates" element={<Certificates />} />
           <Route path="alerts" element={<Alerts />} />
-          <Route path="targets" element={<Targets />} />
+          <Route path="targets" element={<AdminRoute><Targets /></AdminRoute>} />
+          <Route path="agent-targets" element={<AdminRoute><AgentTargets /></AdminRoute>} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -1,0 +1,31 @@
+{
+  "agents": [],
+  "targets": [
+    {
+      "id": "example-001",
+      "url": "https://example.com",
+      "service_name": "官网",
+      "owner": "devops@example.com",
+      "owner_email": "devops@example.com",
+      "agent_id": null,
+      "timeout": 30,
+      "enabled": true,
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "example-002",
+      "url": "https://api.internal.example.com",
+      "service_name": "内部 API 服务",
+      "owner": "backend@example.com",
+      "owner_email": "backend@example.com",
+      "agent_id": null,
+      "timeout": 30,
+      "enabled": true,
+      "created_at": "2024-01-01T00:00:00"
+    }
+  ],
+  "settings": {
+    "default_scrape_interval": 180,
+    "default_timeout": 30
+  }
+}

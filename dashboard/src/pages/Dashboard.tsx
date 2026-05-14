@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, AlertTriangle, CheckCircle, XCircle, TrendingUp, Clock, RefreshCw, Activity } from 'lucide-react';
+import { Shield, AlertTriangle, CheckCircle, XCircle, TrendingUp, Clock, RefreshCw, Activity, Download } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 import { SSLCertData, DashboardStats } from '../types';
 import { fetchMetrics, calculateStats } from '../utils/metrics';
@@ -10,6 +10,69 @@ const STATUS_CONFIG = {
   critical: { label: '紧急', color: '#ef4444', icon: XCircle, bgColor: 'bg-red-50' },
   expired: { label: '已过期', color: '#6b7280', icon: XCircle, bgColor: 'bg-gray-50' },
 };
+
+function exportToMarkdown(data: SSLCertData[], stats: DashboardStats | null) {
+  const now = new Date().toLocaleString('zh-CN');
+  const lines: string[] = [];
+
+  lines.push('# SSL 证书监控报告');
+  lines.push('');
+  lines.push(`> 生成时间：${now}`);
+  lines.push('');
+
+  // 概览
+  if (stats) {
+    lines.push('## 概览统计');
+    lines.push('');
+    lines.push(`| 指标 | 数值 |`);
+    lines.push(`|------|------|`);
+    lines.push(`| 证书总数 | ${stats.total} |`);
+    lines.push(`| 正常 | ${stats.valid} |`);
+    lines.push(`| 即将过期 | ${stats.warning} |`);
+    lines.push(`| 紧急 | ${stats.critical} |`);
+    lines.push(`| 已过期 | ${stats.expired} |`);
+    lines.push(`| 平均剩余天数 | ${stats.average_days_left} 天 |`);
+    lines.push('');
+  }
+
+  // 即将过期 / 紧急 / 已过期
+  const abnormalCerts = data
+    .filter(cert => cert.status !== 'valid')
+    .sort((a, b) => a.days_left - b.days_left);
+
+  if (abnormalCerts.length > 0) {
+    lines.push('## 异常证书');
+    lines.push('');
+    lines.push('| 状态 | 服务名称 | 主机 | 端口 | 团队 | 环境 | 剩余天数 | 到期日期 | 颁发者 |');
+    lines.push('|------|----------|------|------|------|------|----------|----------|--------|');
+    abnormalCerts.forEach(cert => {
+      const statusLabel = STATUS_CONFIG[cert.status]?.label || cert.status;
+      lines.push(`| ${statusLabel} | ${cert.service_name} | ${cert.hostname} | ${cert.port} | ${cert.owner} | ${cert.env} | ${cert.days_left} 天 | ${cert.not_after_date} | ${cert.issuer_org || cert.issuer_cn || '-'} |`);
+    });
+    lines.push('');
+  }
+
+  // 全部证书列表
+  const sorted = [...data].sort((a, b) => a.days_left - b.days_left);
+  lines.push('## 全部证书列表');
+  lines.push('');
+  lines.push('| 状态 | 服务名称 | 主机 | 端口 | 团队 | 环境 | 剩余天数 | 到期日期 | WebTrust |');
+  lines.push('|------|----------|------|------|------|------|----------|----------|----------|');
+  sorted.forEach(cert => {
+    const statusLabel = STATUS_CONFIG[cert.status]?.label || cert.status;
+    const webtrust = cert.is_webtrust ? '是' : '否';
+    lines.push(`| ${statusLabel} | ${cert.service_name} | ${cert.hostname} | ${cert.port} | ${cert.owner} | ${cert.env} | ${cert.days_left} 天 | ${cert.not_after_date} | ${webtrust} |`);
+  });
+  lines.push('');
+
+  const content = lines.join('\n');
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `ssl-cert-report-${new Date().toISOString().slice(0, 10)}.md`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
 
 export default function Dashboard() {
   const [data, setData] = useState<SSLCertData[]>([]);
@@ -109,6 +172,14 @@ export default function Dashboard() {
         <button onClick={loadData} className="btn-secondary flex items-center space-x-2">
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           <span>刷新</span>
+        </button>
+        <button
+          onClick={() => exportToMarkdown(data, stats)}
+          className="btn-primary flex items-center space-x-2"
+          disabled={data.length === 0}
+        >
+          <Download className="h-4 w-4" />
+          <span>导出报告</span>
         </button>
       </div>
       

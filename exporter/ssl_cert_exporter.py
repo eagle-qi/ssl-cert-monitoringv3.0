@@ -32,6 +32,7 @@ import argparse
 import logging
 from urllib.parse import urlparse
 import os
+from concurrent.futures import ThreadPoolExecutor, wait
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -311,7 +312,7 @@ def get_cert_info(hostname, port=443, skip_verify=False, timeout=30):
         # 对于IP直连，使用IP地址作为server_hostname
         server_hostname = hostname if not skip_verify else None
         
-        logger.info(f"Connecting to {connect_host}:{port} (skip_verify={skip_verify})")
+        logger.info(f"Connecting to {connect_host}:{port} (skip_verify={skip_verify}, timeout={timeout})")
         
         with socket.create_connection((connect_host, port), timeout=timeout) as sock:
             with context.wrap_socket(sock, server_hostname=server_hostname) as ssock:
@@ -330,14 +331,16 @@ def get_cert_info(hostname, port=443, skip_verify=False, timeout=30):
                     
                     cert_obj = x509.load_der_x509_certificate(cert_der, default_backend())
                     
-                    # 时间信息
+                    # 时间信息 - 使用 UTC 时间保持一致
                     not_after = cert_obj.not_valid_after_utc
                     not_before = cert_obj.not_valid_before_utc
                     now = datetime.datetime.now(datetime.timezone.utc)
                     
                     result['not_after'] = int(not_after.timestamp())
                     result['not_before'] = int(not_before.timestamp())
-                    result['days_left'] = (not_after.replace(tzinfo=None) - now.replace(tzinfo=None)).days
+                    # 使用 total_seconds() 计算精确天数（保留小数），统一使用 UTC 时间避免时区问题
+                    time_diff = (not_after.replace(tzinfo=None) - now.replace(tzinfo=None)).total_seconds()
+                    result['days_left'] = round(time_diff / 86400, 1)  # 保留一位小数
                     
                     # 主题信息
                     for attr in cert_obj.subject:
@@ -366,11 +369,13 @@ def get_cert_info(hostname, port=443, skip_verify=False, timeout=30):
                         if 'notAfter' in cert:
                             not_after = datetime.datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
                             not_before = datetime.datetime.strptime(cert['notBefore'], '%b %d %H:%M:%S %Y %Z')
-                            now = datetime.datetime.now()
+                            now = datetime.datetime.now(datetime.timezone.utc)
                             
                             result['not_after'] = int(not_after.timestamp())
                             result['not_before'] = int(not_before.timestamp())
-                            result['days_left'] = (not_after - now).days
+                            # 使用 total_seconds() 计算精确天数（保留小数），统一使用 UTC 时间避免时区问题
+                            time_diff = (not_after.replace(tzinfo=None) - now.replace(tzinfo=None)).total_seconds()
+                            result['days_left'] = round(time_diff / 86400, 1)  # 保留一位小数
                         
                         if 'subject' in cert:
                             for item in cert['subject']:
@@ -390,7 +395,7 @@ def get_cert_info(hostname, port=443, skip_verify=False, timeout=30):
                         
                         if 'subjectAltName' in cert:
                             result['sans'] = [name[1] for name in cert['subjectAltName']]
-        
+    
     except socket.timeout:
         result['error'] = f'Connection timeout to {hostname}:{port}'
         logger.warning(result['error'])
@@ -438,10 +443,110 @@ def escape_prometheus_label(value: str) -> str:
     return value.replace('\\', '\\\\').replace('"', '\\"')
 
 
+def check_single_target(target):
+    """检查单个目标的证书（用于线程池并发执行）"""
+    url = target.get('url')
+    owner = target.get('owner', 'unknown')
+    env = target.get('env', 'unknown')
+    service_name = target.get('service_name', url)
+    skip_verify = target.get('skip_verify', False)
+    timeout = target.get('timeout', 8)  # 单个目标超时，默认8秒（避免阻塞整体请求）
+
+    if not url:
+        return None
+
+    # 解析URL
+    parsed = parse_target_url(url)
+    hostname = parsed['host']
+    port = parsed['port']
+
+    if not hostname:
+        return None
+
+    logger.info(f"Checking certificate for {hostname}:{port}")
+    cert_info = get_cert_info(hostname, port, skip_verify=skip_verify, timeout=timeout)
+
+    # 转义所有标签值
+    hostname_esc = escape_prometheus_label(hostname)
+    port_str = str(port)
+    owner_esc = escape_prometheus_label(owner)
+    env_esc = escape_prometheus_label(env)
+    service_name_esc = escape_prometheus_label(service_name)
+
+    # 基础标签
+    labels = (
+        f'hostname="{hostname_esc}",'
+        f'port="{port_str}",'
+        f'owner="{owner_esc}",'
+        f'env="{env_esc}",'
+        f'service_name="{service_name_esc}"'
+    )
+
+    lines = []
+
+    # SSL检查是否成功
+    success_value = 1 if cert_info['success'] else 0
+    lines.append(f'ssl_cert_check_success{{{labels}}} {success_value}')
+
+    if not cert_info['success']:
+        logger.warning(f"Failed to get cert for {hostname}:{port}: {cert_info.get('error')}")
+        return '\n'.join(lines)
+
+    # 证书剩余天数
+    lines.append(f'ssl_cert_days_left{{{labels}}} {cert_info["days_left"]}')
+
+    # 证书过期时间
+    if cert_info['not_after']:
+        lines.append(f'ssl_cert_not_after_timestamp{{{labels}}} {cert_info["not_after"]}')
+
+    # 证书生效时间
+    if cert_info['not_before']:
+        lines.append(f'ssl_cert_not_before_timestamp{{{labels}}} {cert_info["not_before"]}')
+
+    # 获取证书详细信息
+    subject_cn = cert_info['subject'].get('commonName', '')
+    issuer_cn = cert_info['issuer'].get('commonName', '')
+    issuer_org = cert_info['issuer'].get('organizationName', issuer_cn)
+
+    # 转义证书信息
+    subject_cn_esc = escape_prometheus_label(subject_cn)
+    issuer_cn_esc = escape_prometheus_label(issuer_cn)
+    issuer_org_esc = escape_prometheus_label(issuer_org)
+    subject_json_esc = escape_prometheus_label(json.dumps(cert_info['subject']))
+    issuer_json_esc = escape_prometheus_label(json.dumps(cert_info['issuer']))
+
+    # 添加带证书详细信息的标签
+    detail_labels = (
+        f'{labels},'
+        f'subject_cn="{subject_cn_esc}",'
+        f'issuer_cn="{issuer_cn_esc}",'
+        f'issuer_org="{issuer_org_esc}",'
+        f'subject="{subject_json_esc}",'
+        f'issuer="{issuer_json_esc}"'
+    )
+
+    # WebTrust 认证检测
+    is_webtrust = 1 if is_webtrust_ca(issuer_org) else 0
+    lines.append(f'ssl_cert_is_webtrust{{{detail_labels}}} {is_webtrust}')
+
+    # SANs数量
+    lines.append(f'ssl_cert_sans_count{{{detail_labels}}} {len(cert_info["sans"])}')
+
+    # 序列号（作为标签，值为1）
+    serial = cert_info.get('serial', 'unknown')
+    serial_esc = escape_prometheus_label(serial)
+    serial_labels = f'{detail_labels},serial="{serial_esc}"'
+    lines.append(f'ssl_cert_serial{{{serial_labels}}} 1')
+
+    logger.info(f"Certificate for {hostname}:{port} - Days left: {cert_info['days_left']}, Issuer: {issuer_org}, WebTrust: {is_webtrust}")
+
+    return '\n'.join(lines)
+
+
 def generate_prometheus_metrics():
-    """生成Prometheus格式的metrics"""
+    """生成Prometheus格式的metrics（并发版本）"""
     metrics = []
-    
+
     # 指标定义
     metrics.append('# HELP ssl_cert_days_left SSL certificate days left until expiry')
     metrics.append('# TYPE ssl_cert_days_left gauge')
@@ -457,36 +562,56 @@ def generate_prometheus_metrics():
     metrics.append('# TYPE ssl_cert_sans_count gauge')
     metrics.append('# HELP ssl_cert_is_webtrust SSL certificate is issued by WebTrust certified CA (1=yes, 0=no)')
     metrics.append('# TYPE ssl_cert_is_webtrust gauge')
-    
-    for target in CONFIG.get('targets', []):
-        url = target.get('url')
-        owner = target.get('owner', 'unknown')
-        env = target.get('env', 'unknown')
-        service_name = target.get('service_name', url)
-        skip_verify = target.get('skip_verify', False)
-        
-        if not url:
-            continue
-        
-        # 解析URL
+
+    targets = CONFIG.get('targets', [])
+    targets_count = len(targets)
+
+    if targets_count == 0:
+        return '\n'.join(metrics) + '\n'
+
+    # 使用线程池并发检查所有目标，最大并发数为 min(目标数, 20)
+    max_workers = min(targets_count, 20)
+    logger.info(f"Starting concurrent certificate checks for {targets_count} targets with {max_workers} workers")
+
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    # 提交所有任务
+    future_to_target = {
+        executor.submit(check_single_target, target): target
+        for target in targets
+    }
+
+    # 收集结果，设置整体超时为 12 秒（避免单个慢目标阻塞整个请求）
+    done, not_done = wait(future_to_target.keys(), timeout=12)
+
+    # 处理已完成的任务
+    for future in done:
+        try:
+            result = future.result()
+            if result:
+                metrics.append(result)
+        except Exception as e:
+            target = future_to_target[future]
+            logger.error(f"Exception checking {target.get('url')}: {e}")
+
+    # 取消未完成的任务（如超时的目标）
+    for future in not_done:
+        future.cancel()
+        target = future_to_target[future]
+        url = target.get('url', 'unknown')
         parsed = parse_target_url(url)
         hostname = parsed['host']
         port = parsed['port']
-        
-        if not hostname:
-            continue
-        
-        logger.info(f"Checking certificate for {hostname}:{port}")
-        cert_info = get_cert_info(hostname, port, skip_verify=skip_verify)
-        
-        # 转义所有标签值
+        logger.warning(f"Target {hostname}:{port} timed out, generating failure metric")
+
+        # 为超时的目标生成失败指标
+        owner = target.get('owner', 'unknown')
+        env = target.get('env', 'unknown')
+        service_name = target.get('service_name', url)
         hostname_esc = escape_prometheus_label(hostname)
         port_str = str(port)
         owner_esc = escape_prometheus_label(owner)
         env_esc = escape_prometheus_label(env)
         service_name_esc = escape_prometheus_label(service_name)
-        
-        # 基础标签
         labels = (
             f'hostname="{hostname_esc}",'
             f'port="{port_str}",'
@@ -494,63 +619,12 @@ def generate_prometheus_metrics():
             f'env="{env_esc}",'
             f'service_name="{service_name_esc}"'
         )
-        
-        # SSL检查是否成功
-        success_value = 1 if cert_info['success'] else 0
-        metrics.append(f'ssl_cert_check_success{{{labels}}} {success_value}')
-        
-        if not cert_info['success']:
-            logger.warning(f"Failed to get cert for {hostname}:{port}: {cert_info.get('error')}")
-            continue
-        
-        # 证书剩余天数
-        metrics.append(f'ssl_cert_days_left{{{labels}}} {cert_info["days_left"]}')
-        
-        # 证书过期时间
-        if cert_info['not_after']:
-            metrics.append(f'ssl_cert_not_after_timestamp{{{labels}}} {cert_info["not_after"]}')
-        
-        # 证书生效时间
-        if cert_info['not_before']:
-            metrics.append(f'ssl_cert_not_before_timestamp{{{labels}}} {cert_info["not_before"]}')
-        
-        # 获取证书详细信息
-        subject_cn = cert_info['subject'].get('commonName', '')
-        issuer_cn = cert_info['issuer'].get('commonName', '')
-        issuer_org = cert_info['issuer'].get('organizationName', issuer_cn)
-        
-        # 转义证书信息
-        subject_cn_esc = escape_prometheus_label(subject_cn)
-        issuer_cn_esc = escape_prometheus_label(issuer_cn)
-        issuer_org_esc = escape_prometheus_label(issuer_org)
-        subject_json_esc = escape_prometheus_label(json.dumps(cert_info['subject']))
-        issuer_json_esc = escape_prometheus_label(json.dumps(cert_info['issuer']))
-        
-        # 添加带证书详细信息的标签
-        detail_labels = (
-            f'{labels},'
-            f'subject_cn="{subject_cn_esc}",'
-            f'issuer_cn="{issuer_cn_esc}",'
-            f'issuer_org="{issuer_org_esc}",'
-            f'subject="{subject_json_esc}",'
-            f'issuer="{issuer_json_esc}"'
-        )
-        
-        # WebTrust 认证检测
-        is_webtrust = 1 if is_webtrust_ca(issuer_org) else 0
-        metrics.append(f'ssl_cert_is_webtrust{{{detail_labels}}} {is_webtrust}')
-        
-        # SANs数量
-        metrics.append(f'ssl_cert_sans_count{{{detail_labels}}} {len(cert_info["sans"])}')
-        
-        # 序列号（作为标签，值为1）
-        serial = cert_info.get('serial', 'unknown')
-        serial_esc = escape_prometheus_label(serial)
-        serial_labels = f'{detail_labels},serial="{serial_esc}"'
-        metrics.append(f'ssl_cert_serial{{{serial_labels}}} 1')
-        
-        logger.info(f"Certificate for {hostname}:{port} - Days left: {cert_info['days_left']}, Issuer: {issuer_org}, WebTrust: {is_webtrust}")
-    
+        metrics.append(f'ssl_cert_check_success{{{labels}}} 0')
+
+    # 不等待后台线程，立即关闭（避免被慢目标阻塞）
+    executor.shutdown(wait=False)
+
+    logger.info(f"Completed certificate checks for {targets_count} targets")
     return '\n'.join(metrics) + '\n'
 
 

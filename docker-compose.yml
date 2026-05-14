@@ -1,4 +1,44 @@
 services:
+  # ========== Agent Server (Server-Agent 架构服务端) ==========
+  # 用于接收内网 Agent 上报的证书数据，并直接监控未分配 Agent 的目标
+  # 提供 Prometheus 格式接口
+  agent-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: ssl-agent-server
+    volumes:
+      - ./data:/app/data
+      - ./agent/data:/app/agent_data
+      # HTTPS 证书挂载（可选）
+      - ./server/certs:/app/certs:ro
+    environment:
+      - SERVER_LISTEN_HOST=0.0.0.0
+      - SERVER_LISTEN_PORT=8090
+      - SERVER_HTTPS_PORT=8092
+      - SERVER_CONFIG_PATH=/app/data/server_config.json
+      - SERVER_DATA_PATH=/app/data/metrics.json
+      - UNIFIED_TARGETS_PATH=/app/data/ssl_targets.json
+      - AGENT_TARGETS_PATH=/app/agent_data/targets.json
+      - EXPORTER_RELOAD_URL=http://ssl-custom-exporter:9116/reload
+      # HTTPS 配置（可选）
+      - ENABLE_HTTPS=${ENABLE_HTTPS:-false}
+      - SSL_CERT_FILE=/app/certs/server.crt
+      - SSL_KEY_FILE=/app/certs/server.key
+      - SERVER_VERIFY_SSL=${SERVER_VERIFY_SSL:-false}
+    dns:
+      - 8.8.8.8
+      - 114.114.114.114
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-kf", "https://localhost:8092/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - default
+
   prometheus:
     image: prom/prometheus:latest
     container_name: ssl-prometheus
@@ -7,7 +47,7 @@ services:
     volumes:
       - ./prometheus:/etc/prometheus
       - prometheus-data:/prometheus
-      - ./data/prometheus_targets.json:/etc/prometheus/ssl_targets.json:ro  # Prometheus targets 配置文件
+      - ./data/prometheus_targets.json:/etc/prometheus/ssl_targets.json:ro
     ports:
       - "49090:9090"
     command:
@@ -56,7 +96,7 @@ services:
     container_name: ssl-custom-exporter
     volumes:
       - ./exporter:/app
-      - ./data:/app/data:ro  # 只读挂载配置目录
+      - ./data:/app/data:ro
     dns:
       - 8.8.8.8
       - 114.114.114.114
@@ -77,6 +117,7 @@ services:
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
+      - '--log.level=debug'
     entrypoint: /bin/sh /entrypoint.sh
     restart: unless-stopped
     depends_on:
@@ -93,7 +134,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data:/app/data:ro  # 只读挂载配置目录
+      - ./data:/app/data:ro
     environment:
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
@@ -101,12 +142,10 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM=${SMTP_FROM}
       - SMTP_USE_TLS=${SMTP_USE_TLS}
-      - TARGETS_CONFIG_PATH=/app/data/ssl_targets.json
-    ports:
-      - "18081:8080"
+      - TARGETS_CONFIG_PATH=/app/data/ssl_targets.json,/app/data/agent_targets.json
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -123,8 +162,6 @@ services:
     environment:
       - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL}
       - SEND_RESOLVED=${FEISHU_SEND_RESOLVED}
-    ports:
-      - "18080:8080"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -138,11 +175,14 @@ services:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
+      args:
+        VITE_AGENT_SERVER_URL: /api/agent
     container_name: ssl-dashboard
     ports:
       - "48080:80"
     depends_on:
       - captcha-service
+      - agent-server
     restart: unless-stopped
 
   captcha-service:
@@ -153,11 +193,13 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data:/app/data  # 读写挂载配置目录
+      - ./data:/app/data
     environment:
-      - TARGETS_CONFIG_PATH=/app/data/ssl_targets.json  # 统一配置文件路径
-      - DASHBOARD_ADMIN_USER=${DASHBOARD_ADMIN_USER}
-      - DASHBOARD_ADMIN_PASSWORD=${DASHBOARD_ADMIN_PASSWORD}
+      - TARGETS_CONFIG_PATH=/app/data/ssl_targets.json
+      - DASHBOARD_ADMIN_USER
+      - DASHBOARD_ADMIN_PASSWORD
+      - DASHBOARD_READONLY_USER
+      - DASHBOARD_READONLY_PASSWORD
     restart: unless-stopped
 
 networks:

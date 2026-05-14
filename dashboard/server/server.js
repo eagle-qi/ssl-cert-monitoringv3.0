@@ -4,6 +4,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import * as XLSX from 'xlsx';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,23 +114,39 @@ app.post('/api/captcha/verify', (req, res) => {
   return res.json({ success: false, message: '验证码错误' });
 });
 
-// 读取管理员配置（优先从环境变量读取，其次从配置文件读取）
-function readAdminConfig() {
-  // 优先使用环境变量
-  const envUsername = process.env.DASHBOARD_ADMIN_USER;
-  const envPassword = process.env.DASHBOARD_ADMIN_PASSWORD;
+// 读取用户配置（支持管理员和只读用户）
+function readUsersConfig() {
+  // 从环境变量读取管理员
+  const adminUser = process.env.DASHBOARD_ADMIN_USER;
+  const adminPass = process.env.DASHBOARD_ADMIN_PASSWORD;
   
-  if (envUsername && envPassword) {
-    return { username: envUsername, password: envPassword };
+  // 从环境变量读取只读用户
+  const readonlyUser = process.env.DASHBOARD_READONLY_USER;
+  const readonlyPass = process.env.DASHBOARD_READONLY_PASSWORD;
+  
+  const users = [];
+  
+  if (adminUser && adminPass) {
+    users.push({ username: adminUser, password: adminPass, role: 'admin' });
   }
   
-  try {
-    const config = readConfig();
-    return config.admin || { username: 'admin', password: 'admin123' };
-  } catch (error) {
-    console.error('Error reading admin config:', error);
-    return { username: 'admin', password: 'admin123' };
+  if (readonlyUser && readonlyPass) {
+    users.push({ username: readonlyUser, password: readonlyPass, role: 'readonly' });
   }
+  
+  // 如果没有配置环境变量，从配置文件读取
+  if (users.length === 0) {
+    try {
+      const config = readConfig();
+      if (config.admin) {
+        users.push({ username: config.admin.username, password: config.admin.password, role: 'admin' });
+      }
+    } catch (error) {
+      console.error('Error reading admin config:', error);
+    }
+  }
+  
+  return users;
 }
 
 // ==================== 登录验证 API ====================
@@ -142,29 +159,33 @@ app.post('/api/auth/login', (req, res) => {
     return res.json({ success: false, message: '缺少用户名或密码' });
   }
 
-  const admin = readAdminConfig();
+  const users = readUsersConfig();
+  const user = users.find(u => u.username === username && u.password === password);
   
-  if (username === admin.username && password === admin.password) {
+  if (user) {
     return res.json({ 
       success: true, 
       message: '登录成功',
-      user: { username: admin.username }
+      user: { username: user.username, role: user.role }
     });
   }
 
   return res.json({ success: false, message: '用户名或密码错误' });
 });
 
-// 获取管理员配置（不包含密码）
+// 获取用户配置（不包含密码）
 app.get('/api/auth/config', (req, res) => {
-  const admin = readAdminConfig();
+  const users = readUsersConfig();
   res.json({ 
     success: true, 
-    data: { username: admin.username }
+    data: { 
+      users: users.map(u => ({ username: u.username, role: u.role })),
+      hasReadonly: users.some(u => u.role === 'readonly')
+    }
   });
 });
 
-// 更新管理员密码
+// 更新管理员密码（仅支持配置文件中的管理员）
 app.put('/api/auth/password', (req, res) => {
   const { oldPassword, newPassword, confirmPassword } = req.body;
   
@@ -180,18 +201,21 @@ app.put('/api/auth/password', (req, res) => {
     return res.json({ success: false, message: '新密码长度不能少于6位' });
   }
 
-  const admin = readAdminConfig();
-  
-  if (oldPassword !== admin.password) {
-    return res.json({ success: false, message: '原密码错误' });
+  // 如果使用环境变量配置，则不允许通过API修改密码
+  if (process.env.DASHBOARD_ADMIN_USER && process.env.DASHBOARD_ADMIN_PASSWORD) {
+    return res.json({ success: false, message: '管理员使用环境变量配置，请修改环境变量后重启服务' });
   }
 
   try {
     const config = readConfig();
     if (!config.admin) {
-      config.admin = {};
+      return res.json({ success: false, message: '未找到管理员配置' });
     }
-    config.admin.username = admin.username;
+    
+    if (oldPassword !== config.admin.password) {
+      return res.json({ success: false, message: '原密码错误' });
+    }
+    
     config.admin.password = newPassword;
     
     if (writeConfig(config)) {
@@ -237,10 +261,82 @@ function readConfig() {
 function writeConfig(config) {
   try {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+    
+    // 自动同步到 prometheus_targets.json (所有启用的目标)
+    syncPrometheusTargets(config);
+    
+    // 自动同步到 agent_targets.json (只同步分配了 agent_id 的目标)
+    syncAgentTargets(config);
+    
     return true;
   } catch (error) {
     console.error('Error writing config:', error);
     return false;
+  }
+}
+
+// 同步目标到 Prometheus targets 文件
+function syncPrometheusTargets(config) {
+  try {
+    const prometheusTargets = config.targets
+      .filter(t => t.enabled)
+      .map(t => ({
+        targets: [t.url],
+        labels: {
+          service_name: t.service_name,
+          owner: t.owner,
+          env: t.env
+        }
+      }));
+
+    const prometheusTargetsPath = '/app/data/prometheus_targets.json';
+    fs.writeFileSync(prometheusTargetsPath, JSON.stringify(prometheusTargets, null, 2), 'utf-8');
+    console.log(`Synced ${prometheusTargets.length} targets to prometheus_targets.json`);
+  } catch (error) {
+    console.error('Error syncing to prometheus_targets.json:', error);
+  }
+}
+
+// 同步目标到 Agent targets 文件
+function syncAgentTargets(config) {
+  try {
+    const agentTargetsPath = '/app/data/agent_targets.json';
+    
+    // 读取现有的 agent_targets.json
+    let agentConfig = { targets: [] };
+    try {
+      if (fs.existsSync(agentTargetsPath)) {
+        agentConfig = JSON.parse(fs.readFileSync(agentTargetsPath, 'utf-8'));
+      }
+    } catch (e) {
+      console.log('Creating new agent_targets.json');
+    }
+    
+    // 将 ssl_targets.json 中有 agent_id 的目标同步到 agent_targets.json
+    const newAgentTargets = config.targets
+      .filter(t => t.enabled && t.agent_id)  // 只同步分配了 agent_id 的目标
+      .map(t => ({
+        id: t.id,
+        url: t.url,
+        service_name: t.service_name,
+        owner: t.owner,
+        owner_email: t.owner_email,
+        env: t.env,
+        agent_id: t.agent_id,
+        timeout: t.timeout || 10,
+        check_interval: t.check_interval || 180,
+        enabled: t.enabled,
+        created_at: t.created_at || new Date().toISOString()
+      }));
+    
+    // 合并：保留 agent_targets.json 中没有 agent_id 的目标（如内网直接添加的），添加新的
+    const existingWithoutAgent = agentConfig.targets.filter(t => !t.agent_id);
+    agentConfig.targets = [...existingWithoutAgent, ...newAgentTargets];
+    
+    fs.writeFileSync(agentTargetsPath, JSON.stringify(agentConfig, null, 2), 'utf-8');
+    console.log(`Synced ${newAgentTargets.length} targets to agent_targets.json`);
+  } catch (error) {
+    console.error('Error syncing to agent_targets.json:', error);
   }
 }
 
@@ -249,48 +345,49 @@ app.get('/api/targets', (req, res) => {
   try {
     const config = readConfig();
     res.json({
-      success: true,
-      data: config
+      status: 'success',
+      targets: config.targets || [],
+      settings: config.settings || {}
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: '读取配置失败' });
+    res.status(500).json({ status: 'error', error: '读取配置失败' });
   }
 });
 
 // 添加新目标
 app.post('/api/targets', (req, res) => {
   try {
-    const { url, service_name, owner, owner_email, env, enabled = true, check_interval, timeout } = req.body;
+    const { url, service_name, owner, owner_email, env, enabled = true, check_interval, timeout, agent_id } = req.body;
     
     if (!url) {
-      return res.status(400).json({ success: false, message: 'URL不能为空' });
+      return res.status(400).json({ status: 'error', error: 'URL不能为空' });
     }
 
     if (!service_name) {
-      return res.status(400).json({ success: false, message: '服务名称不能为空' });
+      return res.status(400).json({ status: 'error', error: '服务名称不能为空' });
     }
 
     if (!owner) {
-      return res.status(400).json({ success: false, message: '负责人不能为空' });
+      return res.status(400).json({ status: 'error', error: '负责人不能为空' });
     }
 
     if (!owner_email) {
-      return res.status(400).json({ success: false, message: '负责人邮箱不能为空' });
+      return res.status(400).json({ status: 'error', error: '负责人邮箱不能为空' });
     }
 
     if (!env) {
-      return res.status(400).json({ success: false, message: '环境不能为空' });
+      return res.status(400).json({ status: 'error', error: '环境不能为空' });
     }
 
     // 验证URL格式
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return res.status(400).json({ success: false, message: 'URL必须以 http:// 或 https:// 开头' });
+      return res.status(400).json({ status: 'error', error: 'URL必须以 http:// 或 https:// 开头' });
     }
 
     // 验证邮箱格式
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(owner_email)) {
-      return res.status(400).json({ success: false, message: '请输入正确的邮箱格式' });
+      return res.status(400).json({ status: 'error', error: '请输入正确的邮箱格式' });
     }
 
     const config = readConfig();
@@ -298,12 +395,12 @@ app.post('/api/targets', (req, res) => {
     // 检查URL是否已存在
     const exists = config.targets.some(t => t.url === url);
     if (exists) {
-      return res.status(400).json({ success: false, message: '该URL已存在' });
+      return res.status(400).json({ status: 'error', error: '该URL已存在' });
     }
-    
+
     // 生成新ID
     const maxId = config.targets.reduce((max, t) => Math.max(max, parseInt(t.id || 0)), 0);
-    
+
     const newTarget = {
       id: String(maxId + 1),
       url,
@@ -312,19 +409,20 @@ app.post('/api/targets', (req, res) => {
       owner_email,
       env,
       enabled,
+      agent_id: agent_id || undefined,
       check_interval: check_interval || config.settings.default_check_interval || 180,
       timeout: timeout || config.settings.default_timeout || 30
     };
 
     config.targets.push(newTarget);
-    
+
     if (writeConfig(config)) {
-      res.json({ success: true, message: '目标添加成功', data: newTarget });
+      res.json({ status: 'success', message: '目标添加成功', target: newTarget });
     } else {
-      res.status(500).json({ success: false, message: '保存配置失败' });
+      res.status(500).json({ status: 'error', error: '保存配置失败' });
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: '添加目标失败' });
+    res.status(500).json({ status: 'error', error: '添加目标失败' });
   }
 });
 
@@ -338,45 +436,45 @@ app.put('/api/targets/:id', (req, res) => {
     const targetIndex = config.targets.findIndex(t => t.id === id);
     
     if (targetIndex === -1) {
-      return res.status(404).json({ success: false, message: '目标不存在' });
+      return res.status(404).json({ status: 'error', error: '目标不存在' });
     }
 
     // 验证必填字段
     if (!updates.url) {
-      return res.status(400).json({ success: false, message: 'URL不能为空' });
+      return res.status(400).json({ status: 'error', error: 'URL不能为空' });
     }
 
     if (!updates.service_name) {
-      return res.status(400).json({ success: false, message: '服务名称不能为空' });
+      return res.status(400).json({ status: 'error', error: '服务名称不能为空' });
     }
 
     if (!updates.owner) {
-      return res.status(400).json({ success: false, message: '负责人不能为空' });
+      return res.status(400).json({ status: 'error', error: '负责人不能为空' });
     }
 
     if (!updates.owner_email) {
-      return res.status(400).json({ success: false, message: '负责人邮箱不能为空' });
+      return res.status(400).json({ status: 'error', error: '负责人邮箱不能为空' });
     }
 
     if (!updates.env) {
-      return res.status(400).json({ success: false, message: '环境不能为空' });
+      return res.status(400).json({ status: 'error', error: '环境不能为空' });
     }
 
     // 验证URL格式
     if (!updates.url.startsWith('http://') && !updates.url.startsWith('https://')) {
-      return res.status(400).json({ success: false, message: 'URL必须以 http:// 或 https:// 开头' });
+      return res.status(400).json({ status: 'error', error: 'URL必须以 http:// 或 https:// 开头' });
     }
 
     // 验证邮箱格式
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(updates.owner_email)) {
-      return res.status(400).json({ success: false, message: '请输入正确的邮箱格式' });
+      return res.status(400).json({ status: 'error', error: '请输入正确的邮箱格式' });
     }
 
     // 检查URL是否被其他目标使用
     const urlExists = config.targets.some(t => t.url === updates.url && t.id !== id);
     if (urlExists) {
-      return res.status(400).json({ success: false, message: '该URL已被其他目标使用' });
+      return res.status(400).json({ status: 'error', error: '该URL已被其他目标使用' });
     }
 
     // 更新目标
@@ -387,12 +485,12 @@ app.put('/api/targets/:id', (req, res) => {
     };
 
     if (writeConfig(config)) {
-      res.json({ success: true, message: '目标更新成功', data: config.targets[targetIndex] });
+      res.json({ status: 'success', message: '目标更新成功', target: config.targets[targetIndex] });
     } else {
-      res.status(500).json({ success: false, message: '保存配置失败' });
+      res.status(500).json({ status: 'error', error: '保存配置失败' });
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: '更新目标失败' });
+    res.status(500).json({ status: 'error', error: '更新目标失败' });
   }
 });
 
@@ -405,18 +503,18 @@ app.delete('/api/targets/:id', (req, res) => {
     const targetIndex = config.targets.findIndex(t => t.id === id);
     
     if (targetIndex === -1) {
-      return res.status(404).json({ success: false, message: '目标不存在' });
+      return res.status(404).json({ status: 'error', error: '目标不存在' });
     }
 
     config.targets.splice(targetIndex, 1);
 
     if (writeConfig(config)) {
-      res.json({ success: true, message: '目标删除成功' });
+      res.json({ status: 'success', message: '目标删除成功' });
     } else {
-      res.status(500).json({ success: false, message: '保存配置失败' });
+      res.status(500).json({ status: 'error', error: '保存配置失败' });
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: '删除目标失败' });
+    res.status(500).json({ status: 'error', error: '删除目标失败' });
   }
 });
 
@@ -451,22 +549,8 @@ app.post('/api/targets/reload', (req, res) => {
     // 验证配置格式
     const config = readConfig();
     
-    // 生成Prometheus格式的目标文件
-    const prometheusTargets = config.targets
-      .filter(t => t.enabled)
-      .map(t => ({
-        targets: [t.url],
-        labels: {
-          service_name: t.service_name,
-          owner: t.owner,
-          env: t.env
-        }
-      }));
-
-    // 写入Prometheus targets文件到共享数据目录
-    // docker-compose 会将此文件挂载到 Prometheus 容器的 /etc/prometheus/ssl_targets.json
-    const prometheusTargetsPath = '/app/data/prometheus_targets.json';
-    fs.writeFileSync(prometheusTargetsPath, JSON.stringify(prometheusTargets, null, 2), 'utf-8');
+    // 手动触发同步到 prometheus_targets.json
+    syncPrometheusTargets(config);
 
     res.json({ 
       success: true, 
@@ -534,18 +618,152 @@ function parseCSVLine(line) {
   return result;
 }
 
+// 解析 Excel 文件
+function parseExcel(buffer) {
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const sheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[sheetName];
+  const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+  if (data.length < 2) {
+    return [];
+  }
+
+  const headers = data[0].map(h => String(h).trim().toLowerCase());
+  const rows = [];
+
+  // 字段名映射（支持多种命名）
+  const fieldMap = {
+    'url': ['url', '网址', '地址'],
+    'service_name': ['service_name', 'service', '服务名', '服务名称', '服务'],
+    'owner': ['owner', '负责人', '负责人', 'owner_name'],
+    'owner_email': ['owner_email', 'email', '邮箱', '邮件', 'owneremail'],
+    'env': ['env', '环境', '环境变量', 'environment'],
+    'enabled': ['enabled', '启用', '状态', '启用状态'],
+    'check_interval': ['check_interval', 'interval', '检查间隔', '检查周期'],
+    'timeout': ['timeout', '超时', '超时时间'],
+    'agent_id': ['agent_id', 'agent', 'agentid', 'agent_id']
+  };
+
+  function findHeaderIndex(possibleNames) {
+    for (const name of possibleNames) {
+      const idx = headers.findIndex(h => h === name || h.includes(name));
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  }
+
+  const headerIndices = {
+    url: findHeaderIndex(fieldMap['url']),
+    service_name: findHeaderIndex(fieldMap['service_name']),
+    owner: findHeaderIndex(fieldMap['owner']),
+    owner_email: findHeaderIndex(fieldMap['owner_email']),
+    env: findHeaderIndex(fieldMap['env']),
+    enabled: findHeaderIndex(fieldMap['enabled']),
+    check_interval: findHeaderIndex(fieldMap['check_interval']),
+    timeout: findHeaderIndex(fieldMap['timeout']),
+    agent_id: findHeaderIndex(fieldMap['agent_id'])
+  };
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length === 0 || row.every(cell => !cell)) continue;
+
+    const target = {};
+    for (const [field, idx] of Object.entries(headerIndices)) {
+      if (idx !== -1 && idx < row.length) {
+        target[field] = String(row[idx] || '').trim();
+      }
+    }
+    if (Object.keys(target).length > 0) {
+      rows.push(target);
+    }
+  }
+
+  return rows;
+}
+
+// 下载导入模板
+app.get('/api/targets/template', (req, res) => {
+  try {
+    const format = req.query.format || 'csv';
+    const config = readConfig();
+    
+    if (format === 'xlsx') {
+      // 生成 Excel 模板
+      const templateData = [
+        {
+          'URL': 'https://example.com',
+          '服务名称': '示例服务',
+          '负责人': '张三',
+          '负责人邮箱': 'zhangsan@example.com',
+          '环境': 'production',
+          'Agent ID': '可选，从在线Agent列表复制',
+          '启用状态': 'true',
+          '检查间隔(秒)': '180',
+          '超时时间(秒)': '30'
+        }
+      ];
+      
+      const worksheet = XLSX.utils.json_to_sheet(templateData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, '导入模板');
+      
+      // 设置列宽
+      worksheet['!cols'] = [
+        { wch: 50 }, // URL
+        { wch: 20 }, // 服务名称
+        { wch: 15 }, // 负责人
+        { wch: 30 }, // 负责人邮箱
+        { wch: 15 }, // 环境
+        { wch: 35 }, // Agent ID
+        { wch: 12 }, // 启用状态
+        { wch: 18 }, // 检查间隔
+        { wch: 18 }  // 超时时间
+      ];
+      
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=ssl_targets_import_template.xlsx');
+      res.send(buffer);
+    } else {
+      // 生成 CSV 模板
+      const csvHeaders = 'URL,服务名称,负责人,负责人邮箱,环境,Agent ID,启用状态,检查间隔(秒),超时时间(秒)\n';
+      const csvExample = 'https://example.com,示例服务,张三,zhangsan@example.com,production,,true,180,30\n';
+      const csvContent = csvHeaders + csvExample;
+      
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename=ssl_targets_import_template.csv');
+      res.send(Buffer.from('\uFEFF' + csvContent, 'utf-8')); // 添加 BOM 以支持 Excel 打开
+    }
+  } catch (error) {
+    console.error('Template generation error:', error);
+    res.status(500).json({ success: false, message: '生成模板失败' });
+  }
+});
+
 // 批量导入目标
 app.post('/api/targets/import', upload.single('file'), (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ success: false, message: '请上传CSV文件' });
+      return res.status(400).json({ success: false, message: '请上传文件' });
     }
 
-    const csvContent = req.file.buffer.toString('utf-8');
-    const targets = parseCSV(csvContent);
+    const fileName = req.file.originalname.toLowerCase();
+    let targets = [];
+
+    if (fileName.endsWith('.csv')) {
+      const csvContent = req.file.buffer.toString('utf-8');
+      targets = parseCSV(csvContent);
+    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.wps')) {
+      targets = parseExcel(req.file.buffer);
+    } else {
+      return res.status(400).json({ success: false, message: '不支持的文件格式，请上传 CSV、XLSX、XLS 或 WPS 文件' });
+    }
 
     if (targets.length === 0) {
-      return res.status(400).json({ success: false, message: 'CSV文件为空或格式不正确' });
+      return res.status(400).json({ success: false, message: '文件为空或格式不正确' });
     }
 
     const config = readConfig();
@@ -559,7 +777,7 @@ app.post('/api/targets/import', upload.single('file'), (req, res) => {
 
     for (let i = 0; i < targets.length; i++) {
       const target = targets[i];
-      const rowNum = i + 2; // CSV行号（从2开始，第1行是表头）
+      const rowNum = i + 2; // 文件行号（从2开始，第1行是表头）
 
       // 验证必填字段
       if (!target.url) {
@@ -595,6 +813,11 @@ app.post('/api/targets/import', upload.single('file'), (req, res) => {
         check_interval: parseInt(target.check_interval) || config.settings.default_check_interval || 180,
         timeout: parseInt(target.timeout) || config.settings.default_timeout || 30
       };
+      
+      // 如果提供了 agent_id，则添加到目标
+      if (target.agent_id && String(target.agent_id).trim()) {
+        newTarget.agent_id = String(target.agent_id).trim();
+      }
 
       config.targets.push(newTarget);
       successCount++;
@@ -793,5 +1016,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('  DELETE /api/targets/:id - 删除目标');
   console.log('  PATCH  /api/targets/:id/toggle - 启用/禁用目标');
   console.log('  POST   /api/targets/reload - 重新加载配置');
+  console.log('  GET    /api/targets/template - 下载导入模板 (CSV/Excel)');
+  console.log('  POST   /api/targets/import - 批量导入目标');
   console.log('  GET    /health - 健康检查');
 });

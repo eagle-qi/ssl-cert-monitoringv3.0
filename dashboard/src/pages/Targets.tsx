@@ -30,6 +30,9 @@ interface Target {
   enabled: boolean;
   check_interval?: number;
   timeout?: number;
+  agent_id?: string;
+  agent_name?: string;
+  is_agent_target?: boolean;
 }
 
 export default function Targets() {
@@ -57,7 +60,6 @@ export default function Targets() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{success: number, failed: number, errors: string[]} | null>(null);
-  const [importLoading, setImportLoading] = useState(false);
 
   const API_BASE = '/api/targets';
 
@@ -65,14 +67,20 @@ export default function Targets() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(API_BASE);
-      const result = await response.json();
       
-      if (result.success) {
-        setTargets(result.data.targets || []);
-      } else {
-        setError(result.message || '获取目标列表失败');
-      }
+      // 只从 captcha-service 获取目标（手动管理的目标）
+      // Agent 管理的目标显示在 /agent-targets 页面
+      const serverRes = await fetch(API_BASE);
+      const serverData = await serverRes.json();
+      
+      // 只获取手动管理的目标（不是 Agent 管理的）
+      const serverTargets: Target[] = serverData.status === 'success' || serverData.success 
+        ? (serverData.targets || serverData.data?.targets || []).filter(
+            (t: any) => !t.is_agent_target && !t.synced_from_agent
+          )
+        : [];
+      
+      setTargets(serverTargets);
     } catch (err) {
       setError('网络错误，请检查连接');
       console.error(err);
@@ -198,12 +206,13 @@ export default function Targets() {
 
       const result = await response.json();
       
-      if (result.success) {
+      // 支持两种响应格式
+      if (result.status === 'success' || result.success) {
         setShowModal(false);
         await fetchTargets();
         await handleReload();
       } else {
-        alert(result.message || '操作失败');
+        alert(result.message || result.error || '操作失败');
       }
     } catch (err) {
       alert('操作失败，请重试');
@@ -222,11 +231,12 @@ export default function Targets() {
       const response = await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
       const result = await response.json();
       
-      if (result.success) {
+      // 支持两种响应格式
+      if (result.status === 'success' || result.success) {
         await fetchTargets();
         await handleReload();
       } else {
-        alert(result.message || '删除失败');
+        alert(result.message || result.error || '删除失败');
       }
     } catch (err) {
       alert('删除失败，请重试');
@@ -243,11 +253,12 @@ export default function Targets() {
       });
       const result = await response.json();
       
-      if (result.success) {
+      // 支持两种响应格式
+      if (result.status === 'success' || result.success) {
         await fetchTargets();
         await handleReload();
       } else {
-        alert(result.message || '操作失败');
+        alert(result.message || result.error || '操作失败');
       }
     } catch (err) {
       alert('操作失败，请重试');
@@ -256,34 +267,47 @@ export default function Targets() {
   };
 
   // 下载批量导入模板
-  const handleDownloadTemplate = () => {
-    const templateHeaders = ['url', 'service_name', 'owner', 'owner_email', 'env', 'enabled', 'check_interval', 'timeout'];
-    const templateData = [
-      ['https://www.example.com:443', '示例网站', '运维团队', 'admin@example.com', 'production', 'true', '180', '30'],
-      ['https://www.test.com:443', '测试网站', '开发团队', 'dev@example.com', 'test', 'true', '180', '30'],
-    ];
-
-    const csvContent = [
-      templateHeaders.join(','),
-      ...templateData.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `ssl_targets_template_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadTemplate = async (format: 'csv' | 'xlsx' = 'csv') => {
+    try {
+      const response = await fetch(`${API_BASE}/template?format=${format}`);
+      if (!response.ok) {
+        throw new Error('下载模板失败');
+      }
+      
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `ssl_targets_template.${format}`;
+      
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '');
+        }
+      }
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('下载模板失败:', error);
+      alert('下载模板失败，请重试');
+    }
   };
 
   // 处理文件选择
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (!file.name.endsWith('.csv')) {
-        alert('请上传 CSV 格式的文件');
+      const fileName = file.name.toLowerCase();
+      const validExtensions = ['.csv', '.xlsx', '.xls', '.wps'];
+      const isValid = validExtensions.some(ext => fileName.endsWith(ext));
+      if (!isValid) {
+        alert('请上传 CSV、XLSX、XLS 或 WPS 格式的文件');
         return;
       }
       setImportFile(file);
@@ -312,16 +336,17 @@ export default function Targets() {
 
       const result = await response.json();
 
-      if (result.success) {
+      // 支持两种响应格式
+      if (result.status === 'success' || result.success) {
         setImportResult({
-          success: result.data?.success || 0,
+          success: result.data?.success || result.success || 0,
           failed: result.data?.failed || 0,
           errors: result.data?.errors || []
         });
         await fetchTargets();
         await handleReload();
       } else {
-        alert(result.message || '导入失败');
+        alert(result.message || result.error || '导入失败');
       }
     } catch (err) {
       alert('导入失败，请重试');
@@ -531,7 +556,7 @@ export default function Targets() {
                     }`} />
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
+                    <div className="flex items-center space-x-2 mb-2 flex-wrap">
                       <h3 className="text-lg font-semibold text-gray-900">
                         {target.service_name}
                       </h3>
@@ -793,28 +818,41 @@ export default function Targets() {
                     <FileSpreadsheet className="h-8 w-8 text-blue-600" />
                     <div>
                       <h3 className="font-medium text-gray-900">批量导入模板</h3>
-                      <p className="text-sm text-gray-500">下载 CSV 模板，填写后上传</p>
+                      <p className="text-sm text-gray-500">下载模板，填写后上传</p>
                     </div>
                   </div>
-                  <button
-                    onClick={handleDownloadTemplate}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span>下载模板</span>
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleDownloadTemplate('csv')}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>CSV</span>
+                    </button>
+                    <button
+                      onClick={() => handleDownloadTemplate('xlsx')}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>Excel</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-gray-600">
+                  <p><strong>支持格式：</strong>CSV、XLSX、XLS、WPS</p>
+                  <p><strong>必填字段：</strong>URL、服务名称、负责人、负责人邮箱、环境</p>
                 </div>
               </div>
 
               {/* 上传文件 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  上传已填好的 CSV 文件 <span className="text-red-500">*</span>
+                  上传已填好的文件 <span className="text-red-500">*</span>
                 </label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-500 transition-colors">
                   <input
                     type="file"
-                    accept=".csv"
+                    accept=".csv,.xlsx,.xls,.wps"
                     onChange={handleFileChange}
                     className="hidden"
                     id="csv-upload"
@@ -828,7 +866,7 @@ export default function Targets() {
                       </div>
                     ) : (
                       <div>
-                        <p className="text-gray-600">点击选择 CSV 文件</p>
+                        <p className="text-gray-600">点击选择文件（CSV/XLSX/XLS/WPS）</p>
                         <p className="text-sm text-gray-400">或拖拽文件到此处</p>
                       </div>
                     )}

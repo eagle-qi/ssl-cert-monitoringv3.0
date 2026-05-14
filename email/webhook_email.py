@@ -27,20 +27,33 @@ SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
 SMTP_FROM = os.getenv('SMTP_FROM', SMTP_USER)
 SMTP_USE_TLS = os.getenv('SMTP_USE_TLS', 'true').lower() == 'true'
 
-# 配置文件路径
-CONFIG_PATH = os.getenv('TARGETS_CONFIG_PATH', '/app/data/ssl_targets.json')
+# 配置文件路径 - 支持多个配置文件
+CONFIG_PATHS = os.getenv('TARGETS_CONFIG_PATH', '/app/data/ssl_targets.json,/app/data/agent_targets.json').split(',')
 
 
 def load_targets_config():
-    """加载目标配置"""
-    try:
-        if os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
-    except Exception as e:
-        logger.error(f"加载配置文件失败: {e}")
-        return {}
+    """加载目标配置（支持多个配置文件）"""
+    combined = {'targets': []}
+    seen_urls = set()
+    
+    for config_path in CONFIG_PATHS:
+        config_path = config_path.strip()
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    targets = config.get('targets', [])
+                    for target in targets:
+                        url = target.get('url', '')
+                        # 避免重复
+                        if url not in seen_urls:
+                            seen_urls.add(url)
+                            combined['targets'].append(target)
+                logger.info(f"已加载配置文件: {config_path}, 目标数: {len(targets)}")
+        except Exception as e:
+            logger.error(f"加载配置文件 {config_path} 失败: {e}")
+    
+    return combined
 
 
 def build_targets_map(config):
@@ -53,26 +66,82 @@ def build_targets_map(config):
     return targets_map
 
 
-def get_owner_email(instance):
-    """从实例 URL 获取负责人邮箱"""
-    # 去掉端口号
-    base_url = instance.split(':')[0] if instance else ''
+def get_owner_email(alert):
+    """从告警标签获取负责人邮箱"""
+    labels = alert.get('labels', {})
     
-    config = load_targets_config()
-    targets_map = build_targets_map(config)
-    
-    # 精确匹配
-    if instance in targets_map:
-        email = targets_map[instance].get('owner_email', '')
-        if email:
-            return email
-    
-    # URL 前缀匹配
-    for url, target in targets_map.items():
-        if base_url.startswith(url.split(':')[0]) or url.startswith(base_url):
+    # 优先使用 target_url 标签（已通过 metric_relabel_configs 设置）
+    target_url = labels.get('target_url', '')
+    if target_url:
+        config = load_targets_config()
+        targets_map = build_targets_map(config)
+        # 直接匹配 target_url
+        target = targets_map.get(target_url)
+        if target:
             email = target.get('owner_email', '')
             if email:
                 return email
+        
+        # 尝试匹配去掉协议前缀的 URL
+        url_without_scheme = target_url
+        if target_url.startswith('https://'):
+            url_without_scheme = target_url[8:]
+        elif target_url.startswith('http://'):
+            url_without_scheme = target_url[7:]
+        
+        # 去掉路径部分
+        url_without_path = url_without_scheme.split('/')[0]
+        
+        # 遍历匹配
+        for url, target in targets_map.items():
+            config_url = url
+            if config_url.startswith('https://'):
+                config_url = config_url[8:]
+            elif config_url.startswith('http://'):
+                config_url = config_url[7:]
+            config_url = config_url.split('/')[0]
+            
+            if config_url == url_without_path:
+                email = target.get('owner_email', '')
+                if email:
+                    return email
+    
+    # 备用方案：使用 hostname 和 port 标签
+    hostname = labels.get('hostname', '')
+    port = labels.get('port', '443')
+    
+    if not hostname:
+        # 最后尝试使用 instance 标签（可能是 exporter 地址）
+        instance = labels.get('instance', '')
+        if instance and instance != 'ssl-custom-exporter:9116':
+            parts = instance.split(':')
+            hostname = parts[0] if parts else ''
+            port = parts[1] if len(parts) > 1 else '443'
+    
+    if hostname:
+        config = load_targets_config()
+        targets_map = build_targets_map(config)
+        
+        for url, target in targets_map.items():
+            target_url = url
+            if target_url.startswith('https://'):
+                target_url = target_url[8:]
+            elif target_url.startswith('http://'):
+                target_url = target_url[7:]
+            
+            target_parts = target_url.split('/')[0].split(':')
+            target_hostname = target_parts[0]
+            target_port = target_parts[1] if len(target_parts) > 1 else '443'
+            
+            if hostname == target_hostname and port == target_port:
+                email = target.get('owner_email', '')
+                if email:
+                    return email
+            
+            if hostname == target_hostname:
+                email = target.get('owner_email', '')
+                if email:
+                    return email
     
     return None
 
@@ -120,6 +189,10 @@ def build_email_content(alerts, status='firing'):
     """构建邮件内容"""
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
+    # 统计告警严重程度
+    critical_count = sum(1 for a in alerts if a.get('labels', {}).get('severity') == 'critical')
+    warning_count = sum(1 for a in alerts if a.get('labels', {}).get('severity') == 'warning')
+    
     alert_rows = ""
     for alert in alerts:
         labels = alert.get('labels', {})
@@ -127,9 +200,19 @@ def build_email_content(alerts, status='firing'):
         
         alertname = labels.get('alertname', '未知告警')
         severity = labels.get('severity', 'warning')
-        instance = labels.get('instance', 'N/A')
+        # 优先使用 target_url，其次使用 hostname:port，最后使用 instance
+        target_url = labels.get('target_url', '')
+        hostname = labels.get('hostname', '')
+        port = labels.get('port', '443')
+        target_addr = target_url if target_url else f"{hostname}:{port}" if hostname else labels.get('instance', 'N/A')
         service_name = labels.get('service_name', labels.get('job', 'N/A'))
-        description = annotations.get('description', annotations.get('summary', '无'))
+        owner = labels.get('owner', '未知')
+        # 尝试从多个位置获取 description
+        description = annotations.get('description', '')
+        if not description:
+            description = labels.get('description', '')
+        if not description:
+            description = annotations.get('summary', '无详细信息')
         starts_at = alert.get('startsAt', '')
         
         # 格式化时间
@@ -139,20 +222,75 @@ def build_email_content(alerts, status='firing'):
         except:
             pass
         
+        # 根据严重程度设置颜色
         severity_color = '#dc2626' if severity == 'critical' else '#f59e0b'
+        severity_bg = '#fef2f2' if severity == 'critical' else '#fffbeb'
         status_text = '🔴 告警中' if status == 'firing' else '✅ 已恢复'
         
+        # 提取证书剩余天数（从 description 中解析）
+        days_left = ''
+        import re
+        match = re.search(r'(\d+\.?\d*)\s*天', description)
+        if match:
+            days = float(match.group(1))
+            if days < 7:
+                days_left = f'<span style="color: #dc2626; font-weight: bold;">{days:.1f} 天</span>'
+            elif days < 30:
+                days_left = f'<span style="color: #f59e0b; font-weight: bold;">{days:.1f} 天</span>'
+            else:
+                days_left = f'{days:.1f} 天'
+        
         alert_rows += f"""
-        <tr>
+        <tr style="background: {severity_bg};">
             <td style="padding: 12px; border: 1px solid #e5e7eb;">{alertname}</td>
             <td style="padding: 12px; border: 1px solid #e5e7eb;">
                 <span style="color: {severity_color}; font-weight: bold;">{severity.upper()}</span>
             </td>
             <td style="padding: 12px; border: 1px solid #e5e7eb;">{status_text}</td>
             <td style="padding: 12px; border: 1px solid #e5e7eb;">{service_name}</td>
-            <td style="padding: 12px; border: 1px solid #e5e7eb;">{instance}</td>
-            <td style="padding: 12px; border: 1px solid #e5e7eb;">{starts_at}</td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb;"><a href="{target_url}">{target_addr}</a></td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb;">{days_left}</td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb;">{owner}</td>
         </tr>
+        """
+    
+    # 告警详情卡片
+    alert_details = ""
+    for alert in alerts:
+        labels = alert.get('labels', {})
+        annotations = alert.get('annotations', {})
+        target_url = labels.get('target_url', '')
+        hostname = labels.get('hostname', '')
+        port = labels.get('port', '443')
+        target_addr = target_url if target_url else f"{hostname}:{port}" if hostname else labels.get('instance', 'N/A')
+        service_name = labels.get('service_name', '未知')
+        owner = labels.get('owner', '未知')
+        description = annotations.get('description', '')
+        if not description:
+            description = labels.get('description', '')
+        if not description:
+            description = annotations.get('summary', '无详细信息')
+        severity = labels.get('severity', 'warning')
+        
+        severity_color = '#dc2626' if severity == 'critical' else '#f59e0b'
+        severity_icon = '🔴' if severity == 'critical' else '⚠️'
+        
+        alert_details += f"""
+                <div style="margin-bottom: 20px; padding: 15px; background: white; border-radius: 8px; border-left: 4px solid {severity_color}; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h4 style="margin: 0; color: #333;">{severity_icon} {service_name}</h4>
+                        <span style="background: {severity_color}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">{severity.upper()}</span>
+                    </div>
+                    <p style="margin: 5px 0; color: #666; font-size: 14px;">
+                        <strong>目标地址:</strong> <a href="{target_url}">{target_addr}</a>
+                    </p>
+                    <p style="margin: 5px 0; color: #666; font-size: 14px;">
+                        <strong>负责人:</strong> {owner}
+                    </p>
+                    <p style="margin: 10px 0; padding: 10px; background: #f3f4f6; border-radius: 4px; font-size: 14px; color: #333;">
+                        {description}
+                    </p>
+                </div>
         """
     
     html = f"""
@@ -161,30 +299,50 @@ def build_email_content(alerts, status='firing'):
     <head>
         <meta charset="UTF-8">
         <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-            .container {{ max-width: 800px; margin: 0 auto; padding: 20px; }}
-            .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px 8px 0 0; }}
-            .header h1 {{ margin: 0; font-size: 24px; }}
-            .content {{ background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px; }}
-            .info {{ margin-bottom: 20px; }}
-            table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; }}
-            th {{ background: #f3f4f6; padding: 12px; text-align: left; border: 1px solid #e5e7eb; }}
-            .footer {{ margin-top: 20px; text-align: center; color: #6b7280; font-size: 12px; }}
-            .critical {{ background: #fef2f2; }}
-            .warning {{ background: #fffbeb; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; background: #f0f2f5; }}
+            .container {{ max-width: 900px; margin: 0 auto; padding: 20px; }}
+            .header {{ background: linear-gradient(135deg, #dc2626 0%, #f59e0b 100%); color: white; padding: 25px 30px; border-radius: 12px 12px 0 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            .header h1 {{ margin: 0 0 10px 0; font-size: 24px; display: flex; align-items: center; gap: 10px; }}
+            .header p {{ margin: 0; opacity: 0.9; font-size: 14px; }}
+            .content {{ background: white; padding: 25px 30px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            .stats {{ display: flex; gap: 20px; margin-bottom: 25px; }}
+            .stat-card {{ flex: 1; padding: 15px; border-radius: 8px; text-align: center; }}
+            .stat-critical {{ background: #fef2f2; border: 1px solid #fecaca; }}
+            .stat-warning {{ background: #fffbeb; border: 1px solid #fde68a; }}
+            .stat-total {{ background: #f0f9ff; border: 1px solid #bae6fd; }}
+            .stat-number {{ font-size: 28px; font-weight: bold; }}
+            .stat-label {{ font-size: 12px; color: #666; margin-top: 5px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-bottom: 25px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+            th {{ background: #1f2937; color: white; padding: 12px; text-align: left; font-weight: 500; font-size: 13px; }}
+            td {{ padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }}
+            tr:last-child td {{ border-bottom: none; }}
+            .footer {{ margin-top: 25px; text-align: center; color: #9ca3af; font-size: 12px; padding-top: 20px; border-top: 1px solid #e5e7eb; }}
+            .action-btn {{ display: inline-block; background: #3b82f6; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; margin-top: 10px; }}
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
                 <h1>🔔 SSL 证书告警通知</h1>
+                <p>通知时间: {now}</p>
             </div>
             <div class="content">
-                <div class="info">
-                    <p><strong>通知时间:</strong> {now}</p>
-                    <p><strong>告警数量:</strong> {len(alerts)} 条</p>
+                <div class="stats">
+                    <div class="stat-card stat-critical">
+                        <div class="stat-number" style="color: #dc2626;">{critical_count}</div>
+                        <div class="stat-label">严重告警</div>
+                    </div>
+                    <div class="stat-card stat-warning">
+                        <div class="stat-number" style="color: #f59e0b;">{warning_count}</div>
+                        <div class="stat-label">警告告警</div>
+                    </div>
+                    <div class="stat-card stat-total">
+                        <div class="stat-number" style="color: #3b82f6;">{len(alerts)}</div>
+                        <div class="stat-label">总计告警</div>
+                    </div>
                 </div>
                 
+                <h3 style="margin-bottom: 15px; color: #1f2937; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">📋 告警列表</h3>
                 <table>
                     <thead>
                         <tr>
@@ -192,8 +350,9 @@ def build_email_content(alerts, status='firing'):
                             <th>严重程度</th>
                             <th>状态</th>
                             <th>服务</th>
-                            <th>实例</th>
-                            <th>触发时间</th>
+                            <th>目标地址</th>
+                            <th>剩余天数</th>
+                            <th>负责人</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -201,26 +360,18 @@ def build_email_content(alerts, status='firing'):
                     </tbody>
                 </table>
                 
-                <h3 style="margin-top: 20px;">告警详情</h3>
-                <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb;">
-    """
-    
-    for alert in alerts:
-        labels = alert.get('labels', {})
-        annotations = alert.get('annotations', {})
-        description = annotations.get('description', annotations.get('summary', '无'))
-        instance = labels.get('instance', 'N/A')
-        
-        html += f"""
-                    <p><strong>{instance}</strong></p>
-                    <p style="background: #f3f4f6; padding: 10px; border-radius: 4px; margin-bottom: 15px;">{description}</p>
-        """
-    
-    html += f"""
+                <h3 style="margin: 25px 0 15px 0; color: #1f2937; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">📝 告警详情</h3>
+                <div style="margin-bottom: 20px;">
+                    {alert_details}
+                </div>
+                
+                <div style="text-align: center; margin-top: 20px;">
+                    <p style="color: #666; font-size: 14px;">请及时处理以上告警，确保 SSL 证书正常工作</p>
                 </div>
             </div>
             <div class="footer">
                 <p>由 SSL Certificate Monitoring System 自动发送</p>
+                <p>如需管理告警规则或目标配置，请访问监控系统管理后台</p>
             </div>
         </div>
     </body>
@@ -235,10 +386,7 @@ def group_alerts_by_email(alerts):
     groups = {}
     
     for alert in alerts:
-        labels = alert.get('labels', {})
-        instance = labels.get('instance', '')
-        
-        email = get_owner_email(instance)
+        email = get_owner_email(alert)
         if not email:
             # 使用默认邮箱或跳过
             email = 'default'

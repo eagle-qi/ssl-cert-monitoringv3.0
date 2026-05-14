@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Search, Filter, RefreshCw, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield, ShieldOff } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Filter, RefreshCw, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp, Shield, ShieldOff, Download } from 'lucide-react';
 import { SSLCertData } from '../types';
 import { fetchMetrics, filterCertificates, getUniqueValues } from '../utils/metrics';
+import * as XLSX from 'xlsx';
 
 const STATUS_CONFIG = {
   valid: { label: '正常', color: '#10b981', bgColor: 'bg-green-100', textColor: 'text-green-800' },
@@ -9,6 +10,68 @@ const STATUS_CONFIG = {
   critical: { label: '紧急', color: '#ef4444', bgColor: 'bg-red-100', textColor: 'text-red-800' },
   expired: { label: '已过期', color: '#6b7280', bgColor: 'bg-gray-100', textColor: 'text-gray-800' },
 };
+
+// 状态排序优先级：紧急 > 即将过期 > 已过期 > 正常
+const STATUS_PRIORITY: Record<string, number> = {
+  critical: 0,
+  warning: 1,
+  expired: 2,
+  valid: 3,
+};
+
+const EXPORT_HEADERS = ['服务名称', '主机', '端口', '团队', '环境', '状态', '剩余天数', '到期日期', '生效日期', '主题CN', '颁发者CN', '颁发者组织', 'WebTrust认证', 'SAN数量', '序列号'];
+
+function getExportRows(data: SSLCertData[]) {
+  return data.map(cert => [
+    cert.service_name,
+    cert.hostname,
+    cert.port,
+    cert.owner,
+    cert.env,
+    STATUS_CONFIG[cert.status]?.label || cert.status,
+    cert.days_left,
+    cert.not_after_date,
+    cert.not_before_date,
+    cert.subject_cn || '',
+    cert.issuer_cn || '',
+    cert.issuer_org || '',
+    cert.is_webtrust ? '是' : '否',
+    cert.sans_count,
+    cert.serial || '',
+  ]);
+}
+
+function exportToCSV(data: SSLCertData[], filename: string) {
+  const BOM = '\uFEFF';
+  const rows = getExportRows(data);
+  const csvContent = BOM + [EXPORT_HEADERS, ...rows].map(row =>
+    row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+  ).join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function exportToXLSX(data: SSLCertData[], filename: string) {
+  const rows = getExportRows(data);
+  const wsData = [EXPORT_HEADERS, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  // 设置列宽
+  ws['!cols'] = [
+    { wch: 20 }, { wch: 25 }, { wch: 8 }, { wch: 10 }, { wch: 10 },
+    { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 25 },
+    { wch: 25 }, { wch: 20 }, { wch: 12 }, { wch: 10 }, { wch: 30 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'SSL证书');
+  XLSX.writeFile(wb, filename);
+}
 
 export default function Certificates() {
   const [data, setData] = useState<SSLCertData[]>([]);
@@ -21,6 +84,7 @@ export default function Certificates() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   
   const loadData = async () => {
     try {
@@ -48,7 +112,13 @@ export default function Certificates() {
       env: envFilter,
       status: statusFilter,
     });
-    setFilteredData(filtered);
+    // 按状态优先级排序：紧急 > 即将过期 > 已过期 > 正常，同状态按剩余天数升序
+    const sorted = [...filtered].sort((a, b) => {
+      const priorityDiff = (STATUS_PRIORITY[a.status] ?? 99) - (STATUS_PRIORITY[b.status] ?? 99);
+      if (priorityDiff !== 0) return priorityDiff;
+      return a.days_left - b.days_left;
+    });
+    setFilteredData(sorted);
   }, [search, ownerFilter, envFilter, statusFilter, data]);
   
   const owners = getUniqueValues(data, 'owner');
@@ -106,6 +176,42 @@ export default function Certificates() {
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           <span>刷新</span>
         </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            className="btn-primary flex items-center space-x-2"
+            disabled={filteredData.length === 0}
+          >
+            <Download className="h-4 w-4" />
+            <span>批量导出</span>
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          {showExportMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+              <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                <button
+                  onClick={() => {
+                    exportToCSV(filteredData, `ssl-certificates-${new Date().toISOString().slice(0, 10)}.csv`);
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                >
+                  <span>导出 CSV</span>
+                </button>
+                <button
+                  onClick={() => {
+                    exportToXLSX(filteredData, `ssl-certificates-${new Date().toISOString().slice(0, 10)}.xlsx`);
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                >
+                  <span>导出 XLSX</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
       
       {/* 搜索和筛选 */}
@@ -244,13 +350,14 @@ export default function Certificates() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredData.map((cert, index) => {
+              {filteredData.map((cert) => {
                 const config = STATUS_CONFIG[cert.status];
-                const isExpanded = expandedRow === `${cert.hostname}:${cert.port}`;
+                const rowKey = `${cert.hostname}:${cert.port}`;
+                const isExpanded = expandedRow === rowKey;
                 
                 return (
-                  <>
-                    <tr key={index} className="hover:bg-gray-50 transition-colors">
+                  <React.Fragment key={rowKey}>
+                    <tr className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${config.bgColor} ${config.textColor}`}>
                           {getStatusIcon(cert.status)}
@@ -304,7 +411,7 @@ export default function Certificates() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <button
-                          onClick={() => setExpandedRow(isExpanded ? null : `${cert.hostname}:${cert.port}`)}
+                          onClick={() => setExpandedRow(isExpanded ? null : rowKey)}
                           className="text-primary-600 hover:text-primary-700 flex items-center space-x-1"
                         >
                           <span>{isExpanded ? '收起' : '详情'}</span>
@@ -319,7 +426,7 @@ export default function Certificates() {
                     
                     {/* 展开的详情行 */}
                     {isExpanded && (
-                      <tr key={`${index}-detail`}>
+                      <tr>
                         <td colSpan={9} className="px-6 py-4 bg-gray-50">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <div>
@@ -401,7 +508,7 @@ export default function Certificates() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 );
               })}
             </tbody>

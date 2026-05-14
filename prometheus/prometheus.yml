@@ -52,6 +52,33 @@ scrape_configs:
     scrape_timeout: 120s
     static_configs:
       - targets: ['ssl-custom-exporter:9116']
+    metric_relabel_configs:
+      # 关键修复：将 hostname:port 组合为 instance 标签（覆盖默认的 exporter 地址）
+      # 这样 AlertManager 告警中的 instance 标签就能正确匹配到 ssl_targets.json 中的目标
+      - source_labels: [hostname, port]
+        separator: ':'
+        regex: '(.+);(.+)'
+        replacement: '${1}:${2}'
+        target_label: instance
+      # 将 hostname:port 组合为 target_url 标签（用于告警路由）
+      - source_labels: [hostname, port]
+        separator: ';'
+        regex: '(.+);(.+)'
+        replacement: 'https://${1}:${2}'
+        target_label: target_url
+
+  # Agent Server - 拉取 Agent 采集的内网证书数据
+  # Agent Server 主动拉取各 Agent 数据，聚合后提供 Prometheus 格式接口
+  - job_name: 'ssl-agent-server'
+    scrape_interval: 180s
+    scrape_timeout: 120s
+    static_configs:
+      - targets: ['ssl-agent-server:8090']
+    metrics_path: /metrics
+    relabel_configs:
+      # 添加数据来源标签，用于区分公网和内网目标
+      - target_label: source
+        replacement: 'agent'
 
   # Prometheus self-monitoring
   - job_name: 'prometheus'

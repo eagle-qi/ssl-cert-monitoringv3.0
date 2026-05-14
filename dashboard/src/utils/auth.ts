@@ -16,6 +16,7 @@ export async function login(username: string, password: string): Promise<User | 
     if (data.success) {
       const user: User = {
         username: data.user.username,
+        role: data.user.role || 'readonly',
         token: generateToken(),
         loginTime: Date.now(),
       };
@@ -55,6 +56,11 @@ export function getCurrentUser(): User | null {
 
 export function isAuthenticated(): boolean {
   return getCurrentUser() !== null;
+}
+
+export function isAdmin(): boolean {
+  const user = getCurrentUser();
+  return user?.role === 'admin';
 }
 
 function generateToken(): string {

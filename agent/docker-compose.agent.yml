@@ -1,0 +1,47 @@
+# SSL Certificate Agent Docker 部署配置
+# 用于在远程 Agent 机器上使用 Docker 部署 SSL 证书监控 Agent
+
+version: '3.8'
+
+services:
+  ssl-cert-agent:
+    build: .
+    image: ssl-cert-agent:latest
+    container_name: ssl-cert-agent
+    environment:
+      # Agent 监听配置
+      - AGENT_LISTEN_HOST=0.0.0.0
+      - AGENT_LISTEN_PORT=48091
+      - AGENT_TARGETS_PATH=/app/data/targets.json
+      # Agent 身份信息（用于 Server 识别）
+      - AGENT_ID=${AGENT_ID:-}
+      - AGENT_HOSTNAME=${AGENT_HOSTNAME:-}
+      - AGENT_IP=${AGENT_IP:-}
+      # 检测配置
+      - SCRAPE_INTERVAL=${SCRAPE_INTERVAL:-180}
+      - SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-30}
+      # HTTPS 配置（可选）
+      - AGENT_ENABLE_HTTPS=${AGENT_ENABLE_HTTPS:-true}
+      - AGENT_VERIFY_SSL=${AGENT_VERIFY_SSL:-true}
+    volumes:
+      - ./data:/app/data
+      # HTTPS 证书挂载（可选）
+      - ./certs:/app/certs:ro
+    dns:
+      - 8.8.8.8
+      - 114.114.114.114
+    restart: unless-stopped
+    ports:
+      - "${AGENT_PORT:-48091}:48091"
+    healthcheck:
+      test: ["CMD", "curl", "-kf", "https://localhost:48091/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - ssl-agent-network
+
+networks:
+  ssl-agent-network:
+    driver: bridge

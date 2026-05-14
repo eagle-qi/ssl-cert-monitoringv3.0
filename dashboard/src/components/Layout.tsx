@@ -1,12 +1,18 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Shield, LayoutDashboard, FileText, LogOut, RefreshCw, Bell, Settings } from 'lucide-react';
-import { logout } from '../utils/auth';
-import { useState } from 'react';
+import { Shield, LayoutDashboard, FileText, LogOut, RefreshCw, Bell, Settings, Eye, Server } from 'lucide-react';
+import { logout, getCurrentUser } from '../utils/auth';
+import { useState, useEffect } from 'react';
 
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [refreshing, setRefreshing] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  
+  useEffect(() => {
+    const user = getCurrentUser();
+    setIsAdmin(user?.role === 'admin');
+  }, []);
   
   const handleLogout = () => {
     logout();
@@ -23,7 +29,10 @@ export default function Layout() {
     { path: '/dashboard', label: '仪表盘', icon: LayoutDashboard },
     { path: '/certificates', label: '证书列表', icon: FileText },
     { path: '/alerts', label: '告警管理', icon: Bell },
-    { path: '/targets', label: '目标管理', icon: Settings },
+    ...(isAdmin ? [
+      { path: '/targets', label: '目标管理', icon: Settings },
+      { path: '/agent-targets', label: 'Agent目标', icon: Server }
+    ] : []),
   ];
   
   return (
@@ -62,6 +71,18 @@ export default function Layout() {
             
             {/* 右侧操作 */}
             <div className="flex items-center space-x-3">
+              {/* 用户信息 */}
+              <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 rounded-lg">
+                <span className="text-sm font-medium text-gray-700">{getCurrentUser()?.username}</span>
+                {isAdmin ? (
+                  <span className="px-2 py-0.5 text-xs font-medium bg-primary-100 text-primary-700 rounded">管理员</span>
+                ) : (
+                  <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-600 rounded flex items-center">
+                    <Eye className="h-3 w-3 mr-1" />
+                    只读
+                  </span>
+                )}
+              </div>
               <button
                 onClick={refreshPage}
                 className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"

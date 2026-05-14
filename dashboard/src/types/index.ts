@@ -47,6 +47,7 @@ export interface FilterOptions {
 
 export interface User {
   username: string;
+  role: 'admin' | 'readonly';
   token: string;
   loginTime: number;
 }

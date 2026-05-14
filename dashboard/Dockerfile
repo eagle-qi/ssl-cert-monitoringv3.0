@@ -3,6 +3,10 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
+# 接收 build args
+ARG VITE_AGENT_SERVER_URL=http://127.0.0.1:8090
+ENV VITE_AGENT_SERVER_URL=$VITE_AGENT_SERVER_URL
+
 # 复制依赖文件
 COPY package*.json ./
 RUN npm install

@@ -1,0 +1,30 @@
+{
+  "targets": [
+    {
+      "id": "1",
+      "url": "https://192.168.1.100:8443",
+      "service_name": "内网服务A",
+      "owner": "运维团队",
+      "owner_email": "ops@example.com",
+      "env": "production",
+      "timeout": 30,
+      "check_interval": 180,
+      "enabled": true
+    },
+    {
+      "id": "2",
+      "url": "https://192.168.1.101:443",
+      "service_name": "内网服务B",
+      "owner": "开发团队",
+      "owner_email": "dev@example.com",
+      "env": "production",
+      "timeout": 30,
+      "check_interval": 180,
+      "enabled": true
+    }
+  ],
+  "settings": {
+    "default_timeout": 30,
+    "default_check_interval": 180
+  }
+}
